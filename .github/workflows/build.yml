@@ -7,6 +7,12 @@ on:
     branches: [ '*' ]
 
   workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Upload to ip-lists branch and refresh CDN'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '45 2 * * *'
 
@@ -31,12 +37,12 @@ jobs:
       - run: just guard
       - name: Checkout ip-lists branch
         uses: actions/checkout@v6
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
+        if: (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upload == true)) && github.ref == 'refs/heads/master'
         with:
           ref: ip-lists
           path: ip-lists
       - run: just upload
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
+        if: (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upload == true)) && github.ref == 'refs/heads/master'
       - run: just refresh_jsdelivr ${{ github.repository }}
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/master'
+        if: (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.upload == true)) && github.ref == 'refs/heads/master'
 
