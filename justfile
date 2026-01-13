@@ -84,7 +84,7 @@ get_asn operator:
     line.chomp!
     match = line.match(/^AS(\d+)\b.*,\s*([A-Z]{2})$/)
     asn, line_country = match&.captures
-    next unless line_country == country
+    next unless country.empty? || line_country == country
     next if exclude_asn.include?(asn)
     next unless pattern_re.match?(line)
     next if exclude_re.match?(line)
