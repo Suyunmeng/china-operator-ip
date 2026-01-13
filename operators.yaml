@@ -159,6 +159,18 @@ operators:
   googlecn:
     country: 'CN'
     pattern: 'AS24424'
+  aliyuncn:
+    country: 'CN'
+    pattern: 'AS37963'
+  baiducn:
+    country: 'CN'
+    pattern: 'AS38365'
+  tencentcn:
+    country: 'CN'
+    pattern: 'AS45090'
   unicom:
     country: 'CN'
     pattern: '(unicom|cnc)'
+  cloudflare:
+    country: ''
+    pattern: '(AS13335|AS14789|AS132892|AS209242|AS394536|AS395747|AS139242|AS202623|AS203898)'
