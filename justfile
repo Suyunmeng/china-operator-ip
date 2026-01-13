@@ -1,12 +1,11 @@
 set unstable
-set script-interpreter := ['bash']
 bgptools_version := "0.3.0"
 
 default: prepare all stat
 
 # Install or update bgp tooling dependencies
-[script]
 dependency:
+  #!/usr/bin/env bash
   set -euo pipefail
 
   if ! bgptools --version 2>/dev/null | grep -F "{{bgptools_version}}" >/dev/null; then
@@ -21,8 +20,8 @@ dependency:
   bgpkit-broker --version
 
 # Download and normalize latest autnums list
-[script]
 prepare_autnums:
+  #!/usr/bin/env bash
   set -euo pipefail
 
   aria2c -s 4 -x 4 -q -o autnums.html --allow-overwrite=true https://bgp.potaroo.net/cidr/autnums.html
@@ -31,8 +30,8 @@ prepare_autnums:
   echo "INFO> asnames.txt updated ($(wc -l < asnames.txt) entries)" >&2
 
 # Download the latest RIB snapshot for a collector
-[script]
 prepare_rib collector:
+  #!/usr/bin/env bash
   set -euo pipefail
 
   url="$(bgpkit-broker latest -c "{{collector}}" --json \
@@ -66,129 +65,100 @@ prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc21") (prepare_rib "rrc12") 
 [parallel]
 prepare: prepare_autnums prepare_ribs
 
-# Print ASN list for OPERATOR based on operator/*.conf
-[script]
+# Print ASN list for OPERATOR based on operators.yaml
 get_asn operator:
-  set -euo pipefail
+  #!/usr/bin/env ruby
+  require "yaml"
 
-  config="operator/{{operator}}.conf"
-  if [[ ! -f "${config}" ]]; then
-    echo "Unknown operator: {{operator}}" >&2
-    exit 1
-  fi
+  cfg, asnames = "operators.yaml", "asnames.txt"
+  abort("Missing config: #{cfg}") unless File.file?(cfg)
+  abort("Missing asnames.txt. Run 'just prepare_autnums' first.") unless File.file?(asnames) && File.size?(asnames)
 
-  if [[ ! -s asnames.txt ]]; then
-    echo "Missing asnames.txt. Run 'just prepare_autnums' first." >&2
-    exit 1
-  fi
+  op = YAML.load_file(cfg).fetch("operators").fetch("{{operator}}")
+  country = op.fetch("country")
+  exclude_asn = op.fetch("exclude_asn", []).map(&:to_s)
+  pattern_re = Regexp.new(op["pattern"].to_s, Regexp::IGNORECASE)
+  exclude_re = Regexp.new(op.fetch("exclude", "^$"), Regexp::IGNORECASE)
 
-  # shellcheck disable=SC1090
-  source "${config}"
-  : "${COUNTRY:?COUNTRY must be set in ${config}}"
-  EXCLUDE="${EXCLUDE:-^$}"
-  PATTERN="${PATTERN:-}"
-
-  grep -P "${COUNTRY}\$" asnames.txt \
-    | grep -Pi "${PATTERN}" \
-    | grep -vPi "${EXCLUDE}" \
-    | awk '{gsub(/AS/, ""); print $1 }'
+  File.foreach(asnames) do |line|
+    line.chomp!
+    match = line.match(/^AS(\d+)\b.*,\s*([A-Z]{2})$/)
+    asn, line_country = match&.captures
+    next unless line_country == country
+    next if exclude_asn.include?(asn)
+    next unless pattern_re.match?(line)
+    next if exclude_re.match?(line)
+    puts asn
+  end
 
 # Generate IP lists for a single operator
-[script]
 gen operator:
-  set -euo pipefail
+  #!/usr/bin/env ruby
+  require "fileutils"
 
-  mkdir -p result
+  operator = "{{operator}}"
+  FileUtils.mkdir_p("result")
+  out, v4, v6 = %W[result/#{operator}46.txt result/#{operator}.txt result/#{operator}6.txt]
 
-  out="result/{{operator}}46.txt"
-  v4="result/{{operator}}.txt"
-  v6="result/{{operator}}6.txt"
+  ribs = Dir["rib-*.{gz,bz2}"].sort
+  abort("No rib-*.gz or rib-*.bz2 files found. Run 'just prepare_ribs' first.") if ribs.empty?
+  bgptools = ["bgptools", "--ignore-private-asn", "--cache"] + ribs.flat_map { |r| ["--mrt-file", r] }
 
-  RIB_FILES=()
-  for rib in rib-*.gz rib-*.bz2; do
-    [[ -f "${rib}" ]] || continue
-    RIB_FILES+=("--mrt-file" "${rib}")
-  done
+  warn "INFO> #{operator} start"
+  asns = IO.popen(["just", "get_asn", operator], &:read)
+  abort("Failed to get ASN list for #{operator}") unless $?.success?
+  abort("Failed to run bgptools for #{operator}") unless system(*bgptools, *asns.split, out: out)
 
-  if [[ ${#RIB_FILES[@]} -eq 0 ]]; then
-    echo "No rib-*.gz or rib-*.bz2 files found. Run 'just prepare_ribs' first." >&2
-    exit 1
-  fi
-
-  echo "INFO> generating IPv4+IPv6 prefixes for {{operator}}" >&2
-  just get_asn "{{operator}}" \
-    | tee >(awk 'END { if (NR == 0) exit 1 }') \
-    | xargs bgptools --ignore-private-asn --cache "${RIB_FILES[@]}" \
-    > "${out}" || true  # ignore empty output, since drpeng has no IPv6 prefixes
-
-  echo "INFO> {{operator}}46.txt generated ($(wc -l < "${out}") entries)" >&2
-
-  echo "INFO> generating IPv4 prefixes for {{operator}}" >&2
-  grep -Fv ':' "${out}" > "${v4}"
-  echo "INFO> {{operator}}.txt generated ($(wc -l < "${v4}") entries)" >&2
-
-  echo "INFO> generating IPv6 prefixes for {{operator}}" >&2
-  grep -F ':' "${out}" > "${v6}" || true  # ignore empty output, since drpeng has no IPv6 prefixes
-  echo "INFO> {{operator}}6.txt generated ($(wc -l < "${v6}") entries)" >&2
+  v6_lines, v4_lines = File.readlines(out).partition { |line| line.include?(":") }
+  File.write(v4, v4_lines.join)
+  File.write(v6, v6_lines.join)
+  warn "INFO> #{operator} done (v4=#{v4_lines.length} v6=#{v6_lines.length})"
 
 # Generate IP lists for all operators sequentially
-[script]
 all:
-  set -euo pipefail
+  #!/usr/bin/env ruby
+  require "yaml"
 
-  for conf in operator/*.conf; do
-    [[ -f "${conf}" ]] || continue
-    operator="${conf##*/}"
-    operator="${operator%.conf}"
-    just gen "${operator}"
-  done
+  ops = YAML.load_file("operators.yaml").fetch("operators").keys.sort
+  ops.each do |op|
+    status = system("just", "gen", op)
+    exit($?.exitstatus || 1) unless status
+  end
 
-[script]
 guard:
-  set -euo pipefail
-
-  if [[ $(wc -l < result/china.txt) -lt 3000 ]]; then
-    echo "china.txt too small" >&2
+  #!/usr/bin/env ruby
+  {"china.txt" => 3000, "china6.txt" => 1000}.each do |f, min|
+    next if File.foreach("result/#{f}").count >= min
+    warn "#{f} too small"
     exit 1
-  fi
-
-  if [[ $(wc -l < result/china6.txt) -lt 1000 ]]; then
-    echo "china6.txt too small" >&2
-    exit 2
-  fi
-
-  echo "INFO> guard checks passed" >&2
+  end
+  warn "INFO> guard checks passed"
 
 # Summarize total IPv4/IPv6 address space per operator
 stat:
-  #!/usr/bin/env python3
-  import re, sys
-  from pathlib import Path
+  #!/usr/bin/env ruby
+  dir = "result"
+  files = Dir.exist?(dir) ? Dir.glob("#{dir}/*.txt").sort : []
+  files.reject! { |p| p.end_with?("46.txt") }
+  abort("result/*.txt files missing") if files.empty?
 
-  result_dir = Path("result")
-  files = sorted(
-    p for p in (result_dir.glob("*.txt") if result_dir.is_dir() else [])
-    if not p.name.endswith("46.txt")
-  )
-  if not files:
-    sys.exit("result/*.txt files missing")
+  report = files.map do |p|
+    base = p.end_with?("6.txt") ? 48 : 32
+    total = File.foreach(p).sum do |line|
+      match = %r{/(\d+)}.match(line)
+      next 0 unless match
+      prefix_len = match[1].to_i
+      prefix_len <= base ? (1 << (base - prefix_len)) : 0
+    end
+    "#{File.basename(p, ".txt")}\n#{total}"
+  end.join("\n\n") + "\n"
 
-  mask = re.compile(r"/(\d+)")
-
-  def seats(path):
-    base = 48 if path.name.endswith("6.txt") else 32
-    with path.open() as fh:
-      masks = (int(m.group(1)) for line in fh if (m := mask.search(line)))
-      total = sum(1 << (base - m) for m in masks if m <= base)
-    return path.stem, total
-
-  report = "\n\n".join(f"{name}\n{total}" for name, total in map(seats, files)) + "\n"
-  sys.stdout.write(report)
-  (result_dir / "stat").write_text(report)
+  print report
+  File.write("#{dir}/stat", report)
 
 # Publish generated results into the ip-lists branch
-[script]
 upload: guard
+  #!/usr/bin/env bash
   set -euo pipefail
   rm -f ip-lists/*.txt
   mv result/* ip-lists
@@ -201,19 +171,14 @@ upload: guard
   git push -q
 
 # Refresh CDN cache for all files in ip-lists directory
-[script]
 refresh_jsdelivr repository:
-  set -euo pipefail
+  #!/usr/bin/env ruby
+  require "net/http"
 
-  if [[ ! -d ip-lists ]]; then
-    echo "ip-lists directory not found" >&2
-    exit 1
-  fi
+  dir = "ip-lists"
+  abort("#{dir} directory not found") unless Dir.exist?(dir)
 
-  cd ip-lists
-  for file in *; do
-    if [[ -f "${file}" ]]; then
-      echo "INFO> purging CDN cache for ${file}" >&2
-      curl -i "https://purge.jsdelivr.net/gh/{{repository}}@ip-lists/${file}"
-    fi
-  done
+  Dir.children(dir).sort.each do |file|
+    warn "INFO> purging CDN cache for #{file}"
+    puts Net::HTTP.get_response(URI("https://purge.jsdelivr.net/gh/{{repository}}@#{dir}/#{file}")).inspect
+  end
