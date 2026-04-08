@@ -24,8 +24,28 @@ prepare_autnums:
   #!/usr/bin/env bash
   set -euo pipefail
 
-  aria2c -s 4 -x 4 -q -o autnums.html --allow-overwrite=true https://bgp.potaroo.net/cidr/autnums.html
-  awk -F'[<>]' '{print $3,$5}' autnums.html | grep '^AS' > asnames.txt
+  urls=(
+    "https://bgp.potaroo.net/cidr/autnums.html"
+    "https://www.cidr-report.org/as2.0/autnums.html"
+  )
+
+  rm -f autnums.html asnames.txt
+  ok=0
+  for url in "${urls[@]}"; do
+    echo "INFO> fetching autnums from ${url}" >&2
+    if aria2c -s 4 -x 4 -q -o autnums.html --allow-overwrite=true "${url}" \
+      && awk -F'[<>]' '{print $3,$5}' autnums.html | grep '^AS' > asnames.txt \
+      && [[ -s asnames.txt ]]; then
+      ok=1
+      break
+    fi
+  done
+
+  if [[ "${ok}" != "1" ]]; then
+    echo "Failed to fetch or parse autnums from all known sources" >&2
+    exit 3
+  fi
+
   rm -f autnums.html
   echo "INFO> asnames.txt updated ($(wc -l < asnames.txt) entries)" >&2
 
