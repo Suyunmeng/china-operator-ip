@@ -4,4 +4,5 @@ rib.*
 rib6.*
 rib-*
 result/
+analysis/
 *.bin

@@ -79,7 +79,7 @@ git clone -b ip-lists https://github.com/gaoyifan/china-operator-ip.git
 * [just](https://github.com/casey/just?tab=readme-ov-file#installation)
 * [Rust Toolchain](https://www.rust-lang.org/tools/install)
 * [bgpkit-broker](https://github.com/bgpkit/bgpkit-broker) (`cargo install bgpkit-broker@0.7.0`)
-* [bgptools](https://github.com/gaoyifan/bgptools) (`cargo install bgptools@0.3.0`)
+* [bgptools](https://github.com/gaoyifan/bgptools) (`cargo install bgptools@0.3.2`)
 * [aria2](https://github.com/aria2/aria2)
 * [Ruby](https://www.ruby-lang.org)
 
@@ -90,6 +90,20 @@ just
 ```
 
 注：执行 `just --list` 查看所有可用的命令。
+
+对于 `china` 集合，`operators.yaml` 里新增了一个实验性开关 `exclude_foreign_upstream_only: true`。启用后，如果某个 CN ASN 在本地 RIB 快照里观察到的所有直接上游 ASN 都不属于 `CN`，则该 ASN 的所有宣告都会从结果集中剔除。
+
+可以用下面两个命令查看或导出这组 ASN：
+
+```shell
+just foreign_upstream_only_asn china
+just save_foreign_upstream_only_asn china
+```
+
+第二个命令会将结果写入 `result/.china.auto-exclude.txt`，每行一个 ASN。
+此外，`just stat` 也会自动刷新这类隐藏文件。
+
+这个实验性规则依赖支持 `--exclude-foreign-upstream-only` 的 `bgptools` 版本，并直接读取本地 `rib-*` 快照。
 
 ## 社区关联项目
 
