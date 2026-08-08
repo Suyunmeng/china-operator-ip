@@ -119,6 +119,7 @@ update_ip2proxy:
     gh release create ip2proxy-latest --repo "${repository}" --title "IP2Proxy LITE PX7" --notes "Automated daily IP2Proxy LITE PX7 database."
   fi
   gh release upload ip2proxy-latest "${database}" --repo "${repository}" --clobber
+  gh release edit ip2proxy-latest --repo "${repository}" --draft=false
 
 # Print raw ASN candidates for OPERATOR based on operators.yaml
 get_asn_candidates_raw operator:
