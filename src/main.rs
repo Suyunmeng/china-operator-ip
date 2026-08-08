@@ -173,11 +173,44 @@ fn largest_block(start: u128, end: u128, bits: u32) -> u32 {
             break;
         }
         let block_size = (1u128 << next) - 1;
-        if start <= end - block_size {
+        if block_size <= end - start {
             host_bits = next;
         } else {
             break;
         }
     }
     host_bits
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn ipv4_intersection_keeps_only_announced_addresses() {
+        let registered = vec![range_v4(Ipv4Net::from_str("192.0.2.0/24").unwrap())];
+        let announced = vec![range_v4(Ipv4Net::from_str("192.0.2.0/25").unwrap())];
+        let result = summarize(intersect(registered, announced), 32, false);
+        assert_eq!(result, vec![IpNet::from_str("192.0.2.0/25").unwrap()]);
+    }
+
+    #[test]
+    fn ipv6_intersection_keeps_only_announced_addresses() {
+        let registered = vec![range_v6(Ipv6Net::from_str("2001:db8::/32").unwrap())];
+        let announced = vec![range_v6(Ipv6Net::from_str("2001:db8:1::/48").unwrap())];
+        let result = summarize(intersect(registered, announced), 128, true);
+        assert_eq!(result, vec![IpNet::from_str("2001:db8:1::/48").unwrap()]);
+    }
+
+    #[test]
+    fn adjacent_announcements_are_recombined_without_leaving_registered_range() {
+        let registered = vec![range_v4(Ipv4Net::from_str("198.51.100.0/24").unwrap())];
+        let announced = vec![
+            range_v4(Ipv4Net::from_str("198.51.100.0/25").unwrap()),
+            range_v4(Ipv4Net::from_str("198.51.100.128/25").unwrap()),
+        ];
+        let result = summarize(intersect(registered, announced), 32, false);
+        assert_eq!(result, vec![IpNet::from_str("198.51.100.0/24").unwrap()]);
+    }
 }
