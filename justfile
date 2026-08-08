@@ -98,7 +98,7 @@ prepare_ip2proxy:
   rm -f "${archive}" "${database}"
   curl --fail --location --retry 3 --output "${archive}" \
     "https://www.ip2location.com/download?token=${IP2LOCATION_DOWNLOAD_TOKEN}&file=PX7LITEBIN"
-  member="$(unzip -Z1 "${archive}" | grep -Ei '\\.bin$' | head -n 1)"
+  member="$(unzip -Z1 "${archive}" | grep -Eim1 '\.bin$')"
   test -n "${member}"
   unzip -p "${archive}" "${member}" > "${database}"
   rm -f "${archive}"
