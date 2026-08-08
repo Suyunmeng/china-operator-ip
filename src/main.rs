@@ -141,7 +141,7 @@ fn summarize(ranges: Vec<Range>, bits: u32, ipv6: bool) -> Vec<IpNet> {
         let mut start = range.start;
         while start <= range.end {
             let host_bits = largest_block(start, range.end, bits);
-            let prefix_len = bits - host_bits;
+            let prefix_len = (bits - host_bits) as u8;
             let network = if ipv6 {
                 IpNet::V6(Ipv6Net::new(Ipv6Addr::from(start), prefix_len).unwrap())
             } else {
