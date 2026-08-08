@@ -296,10 +296,9 @@ gen operator:
     filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
     abort("Failed to filter NetworksDB networks against BGP data for #{operator}") unless system(*filter, out: raw_out)
   elsif cfg.fetch("downstream_asn", []).any?
-    filter = ["target/release/downstream-filter", "--root-asn"]
-    filter += cfg.fetch("downstream_asn").map(&:to_s)
-    filter += ["--exclude-asn"]
-    filter += cfg.fetch("exclude_asn", []).map(&:to_s)
+    filter = ["target/release/downstream-filter"]
+    filter += cfg.fetch("downstream_asn").flat_map { |asn| ["--root-asn", asn.to_s] }
+    filter += cfg.fetch("exclude_asn", []).flat_map { |asn| ["--exclude-asn", asn.to_s] }
     filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
     abort("Failed to collect downstream ASN networks for #{operator}") unless system(*filter, out: raw_out)
   else
