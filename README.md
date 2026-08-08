@@ -105,6 +105,8 @@ just save_foreign_upstream_only_asn china
 
 这个实验性规则依赖支持 `--exclude-foreign-upstream-only` 的 `bgptools` 版本，并直接读取本地 `rib-*` 快照。
 
+对于在 `operators.yaml` 的某个运营商下同时配置 `networksdb: true`、`orgid: '<organisation-id>'` 以及两位大写 `country` 的情形，生成过程会调用 NetworksDB 的 Organisation Networks API 获取该组织注册的 IPv4 和 IPv6 前缀，并仅保留 API 中 `countrycode` 与配置国家代码相同的前缀。随后结果仅保留在本地 RIB 快照中观测到的已宣告部分，并将相邻的完整地址块重新合并为 CIDR。此模式的 `country` 与 `orgid` 均为必填项；该模式需要在环境变量 `NETWORKSDB_TOKEN` 中提供 NetworksDB API Key，GitHub Actions 会从同名 Secret 注入该变量。未启用 `networksdb` 的运营商继续按 ASN 查询模式生成。
+
 ## 社区关联项目
 
 - [Loyalsoldier/geoip](https://github.com/Loyalsoldier/geoip): 按需定制适用于 Nginx、V2Ray、Clash、Surge、sing-box 等软件的多种格式 GeoIP 文件和规则集

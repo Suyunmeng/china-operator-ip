@@ -30,6 +30,8 @@ jobs:
           path: ~/.cargo/bin
       - run: just dependency
       - uses: nick-fields/retry@v3
+        env:
+          NETWORKSDB_TOKEN: ${{ secrets.NETWORKSDB_TOKEN }}
         with:
           timeout_minutes: 60
           max_attempts: 3

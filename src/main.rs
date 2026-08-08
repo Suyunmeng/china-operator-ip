@@ -1,0 +1,183 @@
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    net::{Ipv4Addr, Ipv6Addr},
+    path::PathBuf,
+};
+
+use bgpkit_parser::BgpkitParser;
+use clap::Parser;
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+
+#[derive(Parser)]
+struct Args {
+    #[arg(long = "mrt-file", required = true)]
+    mrt_files: Vec<PathBuf>,
+    #[arg(long = "network-file")]
+    network_file: PathBuf,
+}
+
+#[derive(Clone, Copy)]
+struct Range {
+    start: u128,
+    end: u128,
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+    let registered = read_networks(&args.network_file)?;
+    let mut registered_v4 = Vec::new();
+    let mut registered_v6 = Vec::new();
+    for network in registered {
+        match network {
+            IpNet::V4(network) => registered_v4.push(range_v4(network)),
+            IpNet::V6(network) => registered_v6.push(range_v6(network)),
+        }
+    }
+
+    let mut announced_v4 = Vec::new();
+    let mut announced_v6 = Vec::new();
+    for mrt_file in args.mrt_files {
+        let mrt_file = mrt_file.to_string_lossy();
+        for elem in BgpkitParser::new(&mrt_file)?.into_elem_iter() {
+            if !elem.is_announcement() {
+                continue;
+            }
+            match elem.prefix.prefix {
+                IpNet::V4(network) => announced_v4.push(range_v4(network)),
+                IpNet::V6(network) => announced_v6.push(range_v6(network)),
+            }
+        }
+    }
+
+    for network in summarize(
+        intersect(merge(registered_v4), merge(announced_v4)),
+        32,
+        false,
+    ) {
+        println!("{network}");
+    }
+    for network in summarize(
+        intersect(merge(registered_v6), merge(announced_v6)),
+        128,
+        true,
+    ) {
+        println!("{network}");
+    }
+    Ok(())
+}
+
+fn read_networks(path: &PathBuf) -> Result<Vec<IpNet>, Box<dyn std::error::Error>> {
+    BufReader::new(File::open(path)?)
+        .lines()
+        .filter(|line| !line.as_ref().is_ok_and(|line| line.trim().is_empty()))
+        .map(|line| Ok(line?.trim().parse()?))
+        .collect()
+}
+
+fn range_v4(network: Ipv4Net) -> Range {
+    Range {
+        start: u32::from(network.network()) as u128,
+        end: u32::from(network.broadcast()) as u128,
+    }
+}
+
+fn range_v6(network: Ipv6Net) -> Range {
+    let host_bits = 128 - network.prefix_len();
+    let host_mask = if host_bits == 128 {
+        u128::MAX
+    } else {
+        (1u128 << host_bits) - 1
+    };
+    Range {
+        start: u128::from(network.network()),
+        end: u128::from(network.network()) | host_mask,
+    }
+}
+
+fn merge(mut ranges: Vec<Range>) -> Vec<Range> {
+    ranges.sort_unstable_by_key(|range| range.start);
+    let mut merged: Vec<Range> = Vec::new();
+    for range in ranges {
+        if let Some(last) = merged.last_mut()
+            && range.start <= last.end.saturating_add(1)
+        {
+            last.end = last.end.max(range.end);
+        } else {
+            merged.push(range);
+        }
+    }
+    merged
+}
+
+fn intersect(left: Vec<Range>, right: Vec<Range>) -> Vec<Range> {
+    let mut intersections = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < left.len() && j < right.len() {
+        let a = left[i];
+        let b = right[j];
+        if a.end < b.start {
+            i += 1;
+        } else if b.end < a.start {
+            j += 1;
+        } else {
+            intersections.push(Range {
+                start: a.start.max(b.start),
+                end: a.end.min(b.end),
+            });
+            if a.end < b.end {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+    }
+    intersections
+}
+
+fn summarize(ranges: Vec<Range>, bits: u32, ipv6: bool) -> Vec<IpNet> {
+    let mut networks = Vec::new();
+    for range in merge(ranges) {
+        let mut start = range.start;
+        while start <= range.end {
+            let host_bits = largest_block(start, range.end, bits);
+            let prefix_len = bits - host_bits;
+            let network = if ipv6 {
+                IpNet::V6(Ipv6Net::new(Ipv6Addr::from(start), prefix_len).unwrap())
+            } else {
+                IpNet::V4(Ipv4Net::new(Ipv4Addr::from(start as u32), prefix_len).unwrap())
+            };
+            networks.push(network);
+            if host_bits == bits {
+                break;
+            }
+            start += 1u128 << host_bits;
+        }
+    }
+    networks
+}
+
+fn largest_block(start: u128, end: u128, bits: u32) -> u32 {
+    let aligned_bits = if start == 0 {
+        bits
+    } else {
+        start.trailing_zeros().min(bits)
+    };
+    let mut host_bits = 0;
+    while host_bits < aligned_bits {
+        let next = host_bits + 1;
+        if next == bits {
+            if start == 0 && end == u128::MAX {
+                host_bits = next;
+            }
+            break;
+        }
+        let block_size = (1u128 << next) - 1;
+        if start <= end - block_size {
+            host_bits = next;
+        } else {
+            break;
+        }
+    }
+    host_bits
+}

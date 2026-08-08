@@ -16,6 +16,8 @@ dependency:
     cargo binstall --secure --no-confirm bgpkit-broker@0.7.0
   fi
 
+  cargo build --release
+
   bgptools --version
   bgpkit-broker --version
 
@@ -195,6 +197,51 @@ save_foreign_upstream_only_asn operator:
   mkdir -p result
   just foreign_upstream_only_asn "{{operator}}" > "result/.{{operator}}.auto-exclude.txt"
 
+# Fetch registered NetworksDB CIDRs for an operator, limited to its configured country
+networksdb_networks operator:
+  #!/usr/bin/env ruby
+  require "json"
+  require "net/http"
+  require "uri"
+  require "yaml"
+
+  operator = "{{operator}}"
+  cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
+  abort("networksdb is disabled for #{operator}") unless cfg.fetch("networksdb", false)
+  country = cfg.fetch("country")
+  abort("country must be a two-letter country code for #{operator}") unless country.match?(/\A[A-Z]{2}\z/)
+  orgid = cfg.fetch("orgid")
+  abort("orgid must be non-empty for #{operator}") if orgid.empty?
+  token = ENV.fetch("NETWORKSDB_TOKEN") { abort("NETWORKSDB_TOKEN is required for #{operator}") }
+
+  [false, true].each do |ipv6|
+    page = 1
+    loop do
+      uri = URI("https://networksdb.io/api/org-networks")
+      params = {id: orgid, page: page}
+      params[:ipv6] = "true" if ipv6
+      uri.query = URI.encode_www_form(params)
+      request = Net::HTTP::Get.new(uri)
+      request["X-Api-Key"] = token
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
+      abort("NetworksDB request failed for #{operator}: HTTP #{response.code}") unless response.is_a?(Net::HTTPSuccess)
+      body = JSON.parse(response.body)
+      results = body.fetch("results")
+      results.each do |network|
+        puts network.fetch("cidr") if network.fetch("countrycode").casecmp?(country)
+      end
+      break if results.empty? || page * 1000 >= body.fetch("total")
+      page += 1
+    end
+  end
+
+# Save country-filtered NetworksDB CIDRs to a hidden file under result/
+save_networksdb_networks operator:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p result
+  just networksdb_networks "{{operator}}" > "result/.{{operator}}.networksdb.txt"
+
 # Generate IP lists for a single operator
 gen operator:
   #!/usr/bin/env ruby
@@ -214,12 +261,24 @@ gen operator:
   bgptools += ribs.flat_map { |r| ["--mrt-file", r] }
 
   warn "INFO> #{operator} start"
-  if cfg.fetch("exclude_foreign_upstream_only", false)
-    abort("Failed to save foreign-upstream-only ASN list for #{operator}") unless system("just", "save_foreign_upstream_only_asn", operator)
+  if cfg.fetch("networksdb", false)
+    country = cfg.fetch("country")
+    abort("country must be a two-letter country code for #{operator}") unless country.match?(/\A[A-Z]{2}\z/)
+    orgid = cfg.fetch("orgid")
+    abort("orgid must be non-empty for #{operator}") if orgid.empty?
+    abort("Failed to save NetworksDB networks for #{operator}") unless system("just", "save_networksdb_networks", operator)
+    network_file = "result/.#{operator}.networksdb.txt"
+    filter = ["target/release/networksdb-filter", "--network-file", network_file]
+    filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
+    abort("Failed to filter NetworksDB networks against BGP data for #{operator}") unless system(*filter, out: out)
+  else
+    if cfg.fetch("exclude_foreign_upstream_only", false)
+      abort("Failed to save foreign-upstream-only ASN list for #{operator}") unless system("just", "save_foreign_upstream_only_asn", operator)
+    end
+    asns = IO.popen(["just", "get_asn", operator], &:read)
+    abort("Failed to get ASN list for #{operator}") unless $?.success?
+    abort("Failed to run bgptools for #{operator}") unless system(*bgptools, *asns.split, out: out)
   end
-  asns = IO.popen(["just", "get_asn", operator], &:read)
-  abort("Failed to get ASN list for #{operator}") unless $?.success?
-  abort("Failed to run bgptools for #{operator}") unless system(*bgptools, *asns.split, out: out)
 
   v6_lines, v4_lines = File.readlines(out).partition { |line| line.include?(":") }
   File.write(v4, v4_lines.join)
