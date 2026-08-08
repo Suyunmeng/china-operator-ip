@@ -1,5 +1,8 @@
 name: Build
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ '*' ]
@@ -19,10 +22,17 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
       - uses: cargo-bins/cargo-binstall@main
       - uses: extractions/setup-just@v3
+      - name: Update IP2Proxy release asset
+        if: github.event_name == 'schedule'
+        env:
+          IP2LOCATION_DOWNLOAD_TOKEN: ${{ secrets.IP2LOCATION_DOWNLOAD_TOKEN }}
+        run: just update_ip2proxy
       - uses: actions/cache@v5
         with:
           key: ${{ runner.os }}-cargo-bin-${{ hashFiles('justfile') }}

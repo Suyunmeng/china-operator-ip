@@ -87,12 +87,24 @@ prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc21") (prepare_rib "rrc12") 
 [parallel]
 prepare: prepare_autnums prepare_ribs prepare_ip2proxy
 
-# Download the IP2Proxy LITE PX7 BIN database used for per-prefix country and ISP filtering
+# Download the persisted IP2Proxy LITE PX7 BIN release asset
 prepare_ip2proxy:
   #!/usr/bin/env bash
   set -euo pipefail
 
+  repository="${GITHUB_REPOSITORY:-Suyunmeng/china-operator-ip}"
+  database="IP2PROXY-LITE-PX7.BIN"
+  rm -f "${database}"
+  gh release download ip2proxy-latest --repo "${repository}" --pattern "${database}" --output "${database}"
+  test -s "${database}"
+
+# Refresh and persist the IP2Proxy LITE PX7 BIN release asset
+update_ip2proxy:
+  #!/usr/bin/env bash
+  set -euo pipefail
+
   : "${IP2LOCATION_DOWNLOAD_TOKEN:?IP2LOCATION_DOWNLOAD_TOKEN is required}"
+  repository="${GITHUB_REPOSITORY:-Suyunmeng/china-operator-ip}"
   archive="IP2PROXY-LITE-PX7.BIN.ZIP"
   database="IP2PROXY-LITE-PX7.BIN"
   rm -f "${archive}" "${database}"
@@ -103,6 +115,10 @@ prepare_ip2proxy:
   unzip -p "${archive}" "${member}" > "${database}"
   rm -f "${archive}"
   test -s "${database}"
+  if ! gh release view ip2proxy-latest --repo "${repository}" >/dev/null 2>&1; then
+    gh release create ip2proxy-latest --repo "${repository}" --title "IP2Proxy LITE PX7" --notes "Automated daily IP2Proxy LITE PX7 database."
+  fi
+  gh release upload ip2proxy-latest "${database}" --repo "${repository}" --clobber
 
 # Print raw ASN candidates for OPERATOR based on operators.yaml
 get_asn_candidates_raw operator:
