@@ -40,6 +40,12 @@ cmcc
 cmcc6
 545718123
 
+cnixp
+5632
+
+cnixp6
+65536
+
 cstnet
 875520
 
@@ -58,16 +64,22 @@ googlecn
 googlecn6
 65537
 
+shixp
+5632
+
+shixp6
+65544
+
 tencentcn
 6210816
 
 tencentcn6
 65536
 
-ucloud
+ucloudcn
 268288
 
-ucloud6
+ucloudcn6
 65536
 
 unicom
@@ -76,8 +88,8 @@ unicom
 unicom6
 308420319
 
-volcanoengine
+volcanoenginecn
 629760
 
-volcanoengine6
+volcanoenginecn6
 96
