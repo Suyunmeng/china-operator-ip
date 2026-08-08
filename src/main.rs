@@ -111,7 +111,7 @@ fn merge(mut ranges: Vec<Range>) -> Vec<Range> {
     let mut merged: Vec<Range> = Vec::new();
     for range in ranges {
         if let Some(last) = merged.last_mut()
-            && range.start <= last.end.saturating_add(1)
+            && range.start <= last.end
         {
             last.end = last.end.max(range.end);
         } else {
@@ -301,13 +301,36 @@ mod tests {
     }
 
     #[test]
-    fn adjacent_announcements_are_recombined_without_leaving_registered_range() {
+    fn adjacent_announcements_keep_their_broadcast_boundaries() {
         let registered = vec![range_v4(Ipv4Net::from_str("198.51.100.0/24").unwrap())];
         let announced = vec![
             range_v4(Ipv4Net::from_str("198.51.100.0/25").unwrap()),
             range_v4(Ipv4Net::from_str("198.51.100.128/25").unwrap()),
         ];
         let result = summarize(intersect(registered, announced), 32, false);
-        assert_eq!(result, vec![IpNet::from_str("198.51.100.0/24").unwrap()]);
+        assert_eq!(
+            result,
+            vec![
+                IpNet::from_str("198.51.100.0/25").unwrap(),
+                IpNet::from_str("198.51.100.128/25").unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn adjacent_networksdb_ranges_do_not_become_an_unannounced_route() {
+        let registered = vec![range_v4(Ipv4Net::from_str("114.111.176.0/22").unwrap())];
+        let announced = vec![
+            range_v4(Ipv4Net::from_str("114.111.176.0/23").unwrap()),
+            range_v4(Ipv4Net::from_str("114.111.178.0/23").unwrap()),
+        ];
+        let result = summarize(intersect(registered, announced), 32, false);
+        assert_eq!(
+            result,
+            vec![
+                IpNet::from_str("114.111.176.0/23").unwrap(),
+                IpNet::from_str("114.111.178.0/23").unwrap(),
+            ]
+        );
     }
 }
