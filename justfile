@@ -85,7 +85,24 @@ prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc21") (prepare_rib "rrc12") 
 
 # Prepare data for generation
 [parallel]
-prepare: prepare_autnums prepare_ribs
+prepare: prepare_autnums prepare_ribs prepare_ip2proxy
+
+# Download the IP2Proxy LITE PX7 BIN database used for per-prefix country and ISP filtering
+prepare_ip2proxy:
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  : "${IP2LOCATION_DOWNLOAD_TOKEN:?IP2LOCATION_DOWNLOAD_TOKEN is required}"
+  archive="IP2PROXY-LITE-PX7.BIN.ZIP"
+  database="IP2PROXY-LITE-PX7.BIN"
+  rm -f "${archive}" "${database}"
+  curl --fail --location --retry 3 --output "${archive}" \
+    "https://www.ip2location.com/download?token=${IP2LOCATION_DOWNLOAD_TOKEN}&file=PX7LITEBIN"
+  member="$(unzip -Z1 "${archive}" | grep -Ei '\\.bin$' | head -n 1)"
+  test -n "${member}"
+  unzip -p "${archive}" "${member}" > "${database}"
+  rm -f "${archive}"
+  test -s "${database}"
 
 # Print raw ASN candidates for OPERATOR based on operators.yaml
 get_asn_candidates_raw operator:
@@ -251,8 +268,14 @@ gen operator:
   operator = "{{operator}}"
   FileUtils.mkdir_p("result")
   out, v4, v6 = %W[result/#{operator}46.txt result/#{operator}.txt result/#{operator}6.txt]
+  raw_out = "result/.#{operator}.raw.txt"
   cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
   origin_only = cfg.fetch("origin_only", false)
+  ip_country = cfg.fetch("ip_country", "")
+  isp_pattern = cfg.fetch("isp_pattern", "")
+  ip_filter_enabled = !ip_country.empty? || !isp_pattern.empty?
+  abort("ip_country must be a two-letter country code for #{operator}") unless ip_country.empty? || ip_country.match?(/\A[A-Z]{2}\z/)
+  abort("ip_country and isp_pattern must be configured together for #{operator}") unless ip_country.empty? == isp_pattern.empty?
 
   ribs = Dir["rib-*.{gz,bz2}"].sort
   abort("No rib-*.gz or rib-*.bz2 files found. Run 'just prepare_ribs' first.") if ribs.empty?
@@ -271,14 +294,29 @@ gen operator:
     filter = ["target/release/networksdb-filter", "--network-file", network_file]
     filter += cfg.fetch("exclude_asn", []).map { |asn| ["--exclude-asn", asn.to_s] }.flatten
     filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
-    abort("Failed to filter NetworksDB networks against BGP data for #{operator}") unless system(*filter, out: out)
+    abort("Failed to filter NetworksDB networks against BGP data for #{operator}") unless system(*filter, out: raw_out)
+  elsif cfg.fetch("downstream_asn", []).any?
+    filter = ["target/release/downstream-filter", "--root-asn"]
+    filter += cfg.fetch("downstream_asn").map(&:to_s)
+    filter += ["--exclude-asn"]
+    filter += cfg.fetch("exclude_asn", []).map(&:to_s)
+    filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
+    abort("Failed to collect downstream ASN networks for #{operator}") unless system(*filter, out: raw_out)
   else
     if cfg.fetch("exclude_foreign_upstream_only", false)
       abort("Failed to save foreign-upstream-only ASN list for #{operator}") unless system("just", "save_foreign_upstream_only_asn", operator)
     end
     asns = IO.popen(["just", "get_asn", operator], &:read)
     abort("Failed to get ASN list for #{operator}") unless $?.success?
-    abort("Failed to run bgptools for #{operator}") unless system(*bgptools, *asns.split, out: out)
+    abort("Failed to run bgptools for #{operator}") unless system(*bgptools, *asns.split, out: raw_out)
+  end
+
+  if ip_filter_enabled
+    filter = ["python3", "scripts/filter_ip2proxy.py", "--database", "IP2PROXY-LITE-PX7.BIN", "--network-file", raw_out]
+    filter += ["--country", ip_country, "--isp-pattern", isp_pattern]
+    abort("Failed to filter #{operator} networks with IP2Proxy") unless system(*filter, out: out)
+  else
+    FileUtils.mv(raw_out, out, force: true)
   end
 
   v6_lines, v4_lines = File.readlines(out).partition { |line| line.include?(":") }

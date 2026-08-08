@@ -2,9 +2,13 @@ operators:
   cernet:
     country: 'CN'
     pattern: '(cngi|cernet)'
+    ip_country: ''
+    isp_pattern: ''
   china:
     country: 'CN'
     pattern: ''
+    ip_country: ''
+    isp_pattern: ''
     origin_only: true
     # Experimental: exclude CN-registered ASNs whose observed direct upstreams
     # in the local RIB snapshot are all non-CN.
@@ -35,52 +39,86 @@ operators:
       - '209306'
   chinanet:
     country: 'CN'
-    pattern: '(china ?telecom|chinanet|AS4847 )'
+    pattern: ''
+    ip_country: 'CN'
+    isp_pattern: '(China Telecom|CHINANET|CHINATELECOM|P\.R\.China|ChinaTelecom|CHINA TELECOM|CT)'
+    downstream_asn: ['4134', '4809']
+    exclude_asn: ['23764']
   cmcc:
     country: 'CN'
     pattern: '(china mobile|cmnet|tietong|CHINA RAILWAY)'
+    ip_country: 'CN'
+    isp_pattern: '(China Mobile|China TieTong|Mobile)'
+    downstream_asn: ['9808']
+    exclude_asn: ['58453', '58807']
   cstnet:
     country: 'CN'
     pattern: 'cstnet'
+    ip_country: ''
+    isp_pattern: ''
   drpeng:
     country: 'CN'
     pattern: '(dxtnet|dr.?peng|gxblnet|xirang)'
+    ip_country: ''
+    isp_pattern: ''
   googlecn:
     country: 'CN'
     pattern: 'AS24424'
+    ip_country: ''
+    isp_pattern: ''
   aliyuncn:
     country: 'CN'
     pattern: 'AS37963'
+    ip_country: ''
+    isp_pattern: ''
   baiducn:
     country: 'CN'
     pattern: 'AS38365'
+    ip_country: ''
+    isp_pattern: ''
   tencentcn:
     country: 'CN'
     pattern: 'AS45090'
+    ip_country: ''
+    isp_pattern: ''
   unicom:
     country: 'CN'
     pattern: '(unicom|cnc)'
+    ip_country: 'CN'
+    isp_pattern: '(China Unicom|UNICOM)'
+    downstream_asn: ['4837', '9929']
+    exclude_asn: ['10099']
   volcanoenginecn:
     country: 'CN'
     pattern: 'AS137718'
+    ip_country: ''
+    isp_pattern: ''
   ucloudcn:
     networksdb: true
     country: 'CN'
     orgid: 'shanghai-ucloud-information-technology-company-ltd'
+    ip_country: ''
+    isp_pattern: ''
     exclude_asn:
       - '135377'
   cnixp:
     networksdb: true
     country: 'CN'
     orgid: 'shenzhen-qianhai-new-type-internet-exchange-point-co-ltd'
+    ip_country: ''
+    isp_pattern: ''
     exclude_asn:
       - '37968'
   shixp:
     networksdb: true
     country: 'CN'
     orgid: 'national-shanghai-new-type-internet-exchange-point'
+    ip_country: ''
+    isp_pattern: ''
     exclude_asn:
       - '146762'
   cloudflare:
     country: ''
     pattern: '(AS13335|AS14789|AS132892|AS209242|AS394536|AS395747|AS139242|AS202623|AS203898)'
+    ip_country: ''
+    isp_pattern: ''

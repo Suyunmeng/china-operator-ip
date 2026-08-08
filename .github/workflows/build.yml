@@ -32,6 +32,7 @@ jobs:
       - uses: nick-fields/retry@v3
         env:
           NETWORKSDB_TOKEN: ${{ secrets.NETWORKSDB_TOKEN }}
+          IP2LOCATION_DOWNLOAD_TOKEN: ${{ secrets.IP2LOCATION_DOWNLOAD_TOKEN }}
         with:
           timeout_minutes: 60
           max_attempts: 3
