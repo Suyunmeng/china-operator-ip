@@ -41,33 +41,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut announced_v4 = Vec::new();
     let mut announced_v6 = Vec::new();
+    let mut excluded_v4 = Vec::new();
+    let mut excluded_v6 = Vec::new();
     for mrt_file in args.mrt_files {
         let mrt_file = mrt_file.to_string_lossy();
         for elem in BgpkitParser::new(&mrt_file)?.into_elem_iter() {
-            if !elem.is_announcement()
-                || has_excluded_origin(elem.origin_asns.as_deref(), &exclude_asns)
-            {
+            if !elem.is_announcement() {
                 continue;
             }
+            let excluded = has_excluded_origin(elem.origin_asns.as_deref(), &exclude_asns);
             match elem.prefix.prefix {
+                IpNet::V4(network) if excluded => excluded_v4.push(range_v4(network)),
                 IpNet::V4(network) => announced_v4.push(range_v4(network)),
+                IpNet::V6(network) if excluded => excluded_v6.push(range_v6(network)),
                 IpNet::V6(network) => announced_v6.push(range_v6(network)),
             }
         }
     }
 
-    for network in summarize(
-        intersect(merge(registered_v4), merge(announced_v4)),
-        32,
-        false,
-    ) {
+    let announced_v4 = subtract(merge(announced_v4), merge(excluded_v4));
+    let announced_v6 = subtract(merge(announced_v6), merge(excluded_v6));
+
+    for network in summarize(intersect(merge(registered_v4), announced_v4), 32, false) {
         println!("{network}");
     }
-    for network in summarize(
-        intersect(merge(registered_v6), merge(announced_v6)),
-        128,
-        true,
-    ) {
+    for network in summarize(intersect(merge(registered_v6), announced_v6), 128, true) {
         println!("{network}");
     }
     Ok(())
@@ -148,6 +146,44 @@ fn intersect(left: Vec<Range>, right: Vec<Range>) -> Vec<Range> {
     intersections
 }
 
+fn subtract(included: Vec<Range>, excluded: Vec<Range>) -> Vec<Range> {
+    let mut remaining = Vec::new();
+    let mut excluded_index = 0;
+
+    for range in included {
+        while excluded_index < excluded.len() && excluded[excluded_index].end < range.start {
+            excluded_index += 1;
+        }
+
+        let mut start = range.start;
+        let mut fully_excluded = false;
+        let mut index = excluded_index;
+        while index < excluded.len() && excluded[index].start <= range.end {
+            let excluded_range = excluded[index];
+            if excluded_range.start > start {
+                remaining.push(Range {
+                    start,
+                    end: excluded_range.start - 1,
+                });
+            }
+            if excluded_range.end >= range.end {
+                fully_excluded = true;
+                break;
+            }
+            start = start.max(excluded_range.end.saturating_add(1));
+            index += 1;
+        }
+        if !fully_excluded && start <= range.end {
+            remaining.push(Range {
+                start,
+                end: range.end,
+            });
+        }
+    }
+
+    remaining
+}
+
 fn summarize(ranges: Vec<Range>, bits: u32, ipv6: bool) -> Vec<IpNet> {
     let mut networks = Vec::new();
     for range in merge(ranges) {
@@ -214,6 +250,40 @@ mod tests {
         let announced = vec![range_v6(Ipv6Net::from_str("2001:db8:1::/48").unwrap())];
         let result = summarize(intersect(registered, announced), 128, true);
         assert_eq!(result, vec![IpNet::from_str("2001:db8:1::/48").unwrap()]);
+    }
+
+    #[test]
+    fn excluded_origin_range_overrides_an_overlapping_route() {
+        let included = vec![range_v4(Ipv4Net::from_str("101.237.0.0/16").unwrap())];
+        let excluded = vec![range_v4(Ipv4Net::from_str("101.237.229.0/24").unwrap())];
+        let result = summarize(subtract(included, excluded), 32, false);
+        assert!(!result.contains(&IpNet::from_str("101.237.229.0/24").unwrap()));
+        assert_eq!(
+            result,
+            vec![
+                IpNet::from_str("101.237.0.0/17").unwrap(),
+                IpNet::from_str("101.237.128.0/18").unwrap(),
+                IpNet::from_str("101.237.192.0/19").unwrap(),
+                IpNet::from_str("101.237.224.0/22").unwrap(),
+                IpNet::from_str("101.237.228.0/24").unwrap(),
+                IpNet::from_str("101.237.230.0/23").unwrap(),
+                IpNet::from_str("101.237.232.0/21").unwrap(),
+                IpNet::from_str("101.237.240.0/20").unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn excluded_ipv6_range_overrides_an_overlapping_route() {
+        let included = vec![range_v6(Ipv6Net::from_str("2001:db8::/32").unwrap())];
+        let excluded = vec![range_v6(Ipv6Net::from_str("2001:db8:1::/48").unwrap())];
+        let result = summarize(subtract(included, excluded), 128, true);
+        assert!(!result.contains(&IpNet::from_str("2001:db8:1::/48").unwrap()));
+        assert!(
+            result
+                .iter()
+                .all(|network| !network.contains(&"2001:db8:1::1".parse().unwrap()))
+        );
     }
 
     #[test]
