@@ -110,6 +110,11 @@ update_ip2proxy:
   rm -f "${archive}" "${database}"
   curl --fail --location --retry 3 --output "${archive}" \
     "https://www.ip2location.com/download?token=${IP2LOCATION_DOWNLOAD_TOKEN}&file=PX7LITEBIN"
+  if ! unzip -tq "${archive}" >/dev/null 2>&1; then
+    echo "IP2Location did not return a valid ZIP archive:" >&2
+    cat "${archive}" >&2
+    exit 1
+  fi
   member="$(unzip -Z1 "${archive}" | grep -Eim1 '\.bin$')"
   test -n "${member}"
   unzip -p "${archive}" "${member}" > "${database}"
