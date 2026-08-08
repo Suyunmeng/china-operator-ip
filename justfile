@@ -269,6 +269,7 @@ gen operator:
     abort("Failed to save NetworksDB networks for #{operator}") unless system("just", "save_networksdb_networks", operator)
     network_file = "result/.#{operator}.networksdb.txt"
     filter = ["target/release/networksdb-filter", "--network-file", network_file]
+    filter += cfg.fetch("exclude_asn", []).map { |asn| ["--exclude-asn", asn.to_s] }.flatten
     filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
     abort("Failed to filter NetworksDB networks against BGP data for #{operator}") unless system(*filter, out: out)
   else

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs::File,
     io::{BufRead, BufReader},
     net::{Ipv4Addr, Ipv6Addr},
@@ -15,6 +16,8 @@ struct Args {
     mrt_files: Vec<PathBuf>,
     #[arg(long = "network-file")]
     network_file: PathBuf,
+    #[arg(long = "exclude-asn")]
+    exclude_asns: Vec<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -25,6 +28,7 @@ struct Range {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let exclude_asns: HashSet<u32> = args.exclude_asns.into_iter().collect();
     let registered = read_networks(&args.network_file)?;
     let mut registered_v4 = Vec::new();
     let mut registered_v6 = Vec::new();
@@ -40,7 +44,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for mrt_file in args.mrt_files {
         let mrt_file = mrt_file.to_string_lossy();
         for elem in BgpkitParser::new(&mrt_file)?.into_elem_iter() {
-            if !elem.is_announcement() {
+            if !elem.is_announcement()
+                || has_excluded_origin(elem.origin_asns.as_deref(), &exclude_asns)
+            {
                 continue;
             }
             match elem.prefix.prefix {
@@ -65,6 +71,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{network}");
     }
     Ok(())
+}
+
+fn has_excluded_origin(
+    origins: Option<&[bgpkit_parser::models::Asn]>,
+    excluded: &HashSet<u32>,
+) -> bool {
+    origins.is_some_and(|origins| origins.iter().any(|asn| excluded.contains(&u32::from(asn))))
 }
 
 fn read_networks(path: &PathBuf) -> Result<Vec<IpNet>, Box<dyn std::error::Error>> {
@@ -201,6 +214,20 @@ mod tests {
         let announced = vec![range_v6(Ipv6Net::from_str("2001:db8:1::/48").unwrap())];
         let result = summarize(intersect(registered, announced), 128, true);
         assert_eq!(result, vec![IpNet::from_str("2001:db8:1::/48").unwrap()]);
+    }
+
+    #[test]
+    fn excluded_origin_is_filtered() {
+        let excluded = HashSet::from([64500]);
+        let origins = vec![bgpkit_parser::models::Asn::new_32bit(64500)];
+        assert!(has_excluded_origin(Some(&origins), &excluded));
+    }
+
+    #[test]
+    fn other_origin_is_kept() {
+        let excluded = HashSet::from([64500]);
+        let origins = vec![bgpkit_parser::models::Asn::new_32bit(64501)];
+        assert!(!has_excluded_origin(Some(&origins), &excluded));
     }
 
     #[test]

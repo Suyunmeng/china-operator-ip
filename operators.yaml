@@ -67,6 +67,8 @@ operators:
     networksdb: true
     country: 'CN'
     orgid: 'shanghai-ucloud-information-technology-company-ltd'
+    exclude_asn:
+      - '135377'
   cnixp:
     networksdb: true
     country: 'CN'
