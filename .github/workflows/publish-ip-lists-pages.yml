@@ -1,0 +1,36 @@
+name: Publish ip-lists to Cloudflare Pages
+
+on:
+  push:
+    branches: [ip-lists]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-ip-lists-pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    name: Publish static ip-lists site
+    steps:
+      - name: Checkout ip-lists
+        uses: actions/checkout@v6
+        with:
+          ref: ip-lists
+
+      - name: Install tree
+        run: sudo apt-get update && sudo apt-get install --yes tree
+
+      - name: Generate directory index
+        run: tree -H . -P "*.txt|*.json|*.jsonl|stat" --ignorecase --noreport -T "China Operator IP - prebuild results" -o index.html .
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy . --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}

@@ -20,6 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -82,3 +83,5 @@ jobs:
       - name: Refresh jsDelivr
         working-directory: source
         run: just refresh_jsdelivr "${{ github.repository }}"
+      - name: Publish updated ip-lists
+        run: gh workflow run publish-ip-lists-pages.yml --ref ip-lists
