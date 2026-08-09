@@ -70,7 +70,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 `ip-lists` 还包含以下可审计数据：
 
 - `prefix-owner.jsonl`：每个已分类 Prefix 的资产、所有者、类型、WHOIS、规则、置信度和位置。
-- `prefix-asn.jsonl`：Origin ASN、自动推导的 ASN Family、Peer 和采集器。
+- `prefix-asn.jsonl`：分类使用的代表性 Origin ASN、所有采集器实际观测到的 `observed_origin_asn`、自动推导的 ASN Family、Peer 和采集器。
 - `prefix-path.jsonl`：代表性 AS Path，并明确分离 Origin、Transit、Peer ASN。
 - `asn-family.json`：ASN Graph 自动发现结果、分数、深度和证据。
 - `manifest.json`：Schema 版本和输出清单。
@@ -207,7 +207,7 @@ GitHub Actions 分为两个阶段：
 1. 所有 push/PR 都运行 fmt、Clippy、tests。
 2. 仅 master 的定时或手动任务下载完整数据并生成到 staging 目录。
 
-只有编译、生成、BGP-only guard 全部成功后，才会完整替换 `ip-lists` 工作树并推送。任何下载、解析、规则或 guard 失败都会在发布前终止，不会把半成品写入 `ip-lists` 分支。
+只有编译、生成、BGP-only guard 全部成功后，才会完整替换 `ip-lists` 工作树并推送。该分支只保留生成的 TXT、JSON、JSONL 数据；任何下载、解析、规则或 guard 失败都会在发布前终止，不会把半成品写入 `ip-lists` 分支。
 
 ## 归属数据说明
 

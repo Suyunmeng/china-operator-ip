@@ -208,6 +208,7 @@ assets:
                 PrefixAsnMetadata {
                     prefix: prefix.parse().unwrap(),
                     origin_asn: vec![64500],
+                    observed_origin_asn: vec![64500],
                     origin_asn_family: Vec::new(),
                     peer_asn: Vec::new(),
                     collectors: Vec::new(),

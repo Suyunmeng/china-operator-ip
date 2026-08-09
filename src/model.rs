@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct BgpObservation {
     pub prefix: IpNet,
     pub origin_asns: BTreeSet<u32>,
+    pub observed_origin_asns: BTreeSet<u32>,
     pub asn_path: Vec<u32>,
     pub transit_asns: BTreeSet<u32>,
     pub peer_asns: BTreeSet<u32>,
@@ -110,6 +111,7 @@ pub struct PrefixMetadata {
 pub struct PrefixAsnMetadata {
     pub prefix: IpNet,
     pub origin_asn: Vec<u32>,
+    pub observed_origin_asn: Vec<u32>,
     pub origin_asn_family: Vec<String>,
     pub peer_asn: Vec<u32>,
     pub collectors: Vec<String>,

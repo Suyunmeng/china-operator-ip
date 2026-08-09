@@ -221,7 +221,7 @@ check:
   cargo test --all-targets
 
 # Publish a complete staged result only after validation succeeds.
-upload: guard stat
+upload: guard
   #!/usr/bin/env bash
   set -euo pipefail
   test -d ip-lists/.git || { echo "ip-lists worktree is missing" >&2; exit 1; }
@@ -231,7 +231,6 @@ upload: guard stat
   cd ip-lists
   find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
   cp -a "${staging}/." .
-  tree -H . -P "*.txt|*.json|*.jsonl|stat" -T "China Network Asset Database" > index.html
   git config user.name "GitHub Actions"
   git config user.email noreply@github.com
   git add --all

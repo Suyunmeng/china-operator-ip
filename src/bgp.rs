@@ -70,6 +70,7 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
                 BgpObservation {
                     prefix,
                     origin_asns,
+                    observed_origin_asns: aggregate.origin_asns,
                     asn_path,
                     transit_asns,
                     peer_asns: aggregate.peers,

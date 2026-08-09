@@ -399,6 +399,7 @@ assets:
         BgpObservation {
             prefix: IpNet::from_str("203.0.113.0/24").unwrap(),
             origin_asns: BTreeSet::from([4134]),
+            observed_origin_asns: BTreeSet::from([4134]),
             asn_path: vec![64500, 4134],
             transit_asns: BTreeSet::from([64500]),
             peer_asns: BTreeSet::new(),

@@ -93,6 +93,7 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
             PrefixAsnMetadata {
                 prefix: observation.prefix,
                 origin_asn: observation.origin_asns.iter().copied().collect(),
+                observed_origin_asn: observation.observed_origin_asns.iter().copied().collect(),
                 origin_asn_family: family_names,
                 peer_asn: observation.peer_asns.iter().copied().collect(),
                 collectors: observation.collectors.iter().cloned().collect(),
