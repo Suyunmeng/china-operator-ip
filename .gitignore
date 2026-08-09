@@ -6,4 +6,5 @@ rib-*
 result/
 analysis/
 *.bin
+.*.trusted-cn-transit.txt
 target/

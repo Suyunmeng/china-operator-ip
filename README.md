@@ -91,19 +91,7 @@ just
 
 注：执行 `just --list` 查看所有可用的命令。
 
-对于 `china` 集合，`operators.yaml` 里新增了一个实验性开关 `exclude_foreign_upstream_only: true`。启用后，如果某个 CN ASN 在本地 RIB 快照里观察到的所有直接上游 ASN 都不属于 `CN`，则该 ASN 的所有宣告都会从结果集中剔除。
-
-可以用下面两个命令查看或导出这组 ASN：
-
-```shell
-just foreign_upstream_only_asn china
-just save_foreign_upstream_only_asn china
-```
-
-第二个命令会将结果写入 `result/.china.auto-exclude.txt`，每行一个 ASN。
-此外，`just stat` 也会自动刷新这类隐藏文件。
-
-这个实验性规则依赖支持 `--exclude-foreign-upstream-only` 的 `bgptools` 版本，并直接读取本地 `rib-*` 快照。
+对于 `china` 集合，`operators.yaml` 的 `trusted_cn_transit_asn` 列出受信任的境内转接 ASN。生成过程仍先严格从 `asnames.txt` 中筛选注册国家为 `CN` 的源 ASN；随后仅保留其在本地 RIB 快照中观测到的、从源端向上直到首个非 `CN` 或未知 ASN 之前包含列表中任一转接 ASN 的 AS_PATH。默认列表为 `AS4134`、`AS4809`、`AS4837`、`AS9929`、`AS9808`、`AS4538` 和 `AS7497`。
 
 对于在 `operators.yaml` 的某个运营商下同时配置 `networksdb: true`、两位大写 `country`，以及 `org_id: '<organisation-id>'` 或 `org_id: ['<organisation-id-1>', '<organisation-id-2>', ...]` 或 `org_id_search: ['<organisation-search-query>', ...]` 的情形，生成过程会调用 NetworksDB 的 Organisation Networks API 获取组织注册的 IPv4 和 IPv6 前缀。`org_id` 可以是单个组织 ID 或组织 ID 列表，所有组织都会被逐个查询。配置 `org_id_search` 时，会先对每个查询调用 Organisation Search API，收集并去重所有返回组织的 `org_id`，再分别查询其网段；可选的 `org_id_country: '<ISO-3166-1-alpha-2>'` 会作为 Organisation Search API 的国家筛选参数，空字符串表示不按组织国家筛选。`org_id_country` 在指定静态 `org_id` 时无效。仅保留 API 中 `countrycode` 与配置国家代码相同的前缀。随后结果仅保留在本地 RIB 快照中观测到的已宣告前缀覆盖范围，并按实际广播边界规范化为 CIDR，不会把相邻但没有对应大前缀广播的路由合并为新的更大前缀。此模式的 `country` 与非空的 `org_id` 或 `org_id_search` 列表均为必填项；两者不应同时配置。该模式需要在环境变量 `NETWORKSDB_TOKEN` 中提供 NetworksDB API Key，GitHub Actions 会从同名 Secret 注入该变量。未启用 `networksdb` 的运营商继续按 ASN 查询模式生成。NetworksDB 模式同样支持 `exclude_asn`：任何 origin ASN 命中该列表的已广播前缀，都会从最终 BGP 覆盖范围中扣除，即使该地址也被其他 ASN 的更大前缀覆盖；适用于组织网段由其他 ASN 代为广播的场景。
 
