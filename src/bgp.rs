@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn transit_asn_does_not_become_origin() {
-        let path = vec![64500, 4134, 65001];
+        let path = [64500, 4134, 65001];
         let origins = BTreeSet::from([65001]);
         let transit: BTreeSet<_> = path
             .iter()
