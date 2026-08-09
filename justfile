@@ -188,6 +188,7 @@ networksdb_networks operator:
   require "net/http"
   require "uri"
   require "yaml"
+  require "ipaddr"
 
   operator = "{{operator}}"
   cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
@@ -234,7 +235,15 @@ networksdb_networks operator:
         body = JSON.parse(response.body)
         results = body.fetch("results")
         results.each do |network|
-          puts network.fetch("cidr") if network.fetch("countrycode").casecmp?(country)
+          cidr = network["cidr"]
+          next unless network.fetch("countrycode").casecmp?(country)
+          begin
+            raise ArgumentError unless cidr.is_a?(String) && cidr.match?(%r{\A[^/\s]+/\d+\z})
+            IPAddr.new(cidr)
+            puts cidr
+          rescue ArgumentError
+            warn "WARN> skipping invalid NetworksDB CIDR for #{operator} org_id=#{orgid}: #{cidr.inspect}"
+          end
         end
         break if results.empty? || page * 1000 >= body.fetch("total")
         page += 1
@@ -370,8 +379,10 @@ stat:
 upload: guard
   #!/usr/bin/env bash
   set -euo pipefail
-  rm -f ip-lists/{.,}*.txt
-  mv result/{*,.*.txt} ip-lists
+  shopt -s nullglob
+  files=(result/*.txt result/.*.txt)
+  ((${#files[@]})) || { echo "No result files to upload" >&2; exit 1; }
+  mv "${files[@]}" ip-lists
   cd ip-lists
   tree -H . -P "*.txt|stat" -T "China Operator IP - prebuild results" > index.html
   git config user.name "GitHub Actions"
