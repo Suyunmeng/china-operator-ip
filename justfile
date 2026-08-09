@@ -115,14 +115,18 @@ guard:
   path_file = metadata_files.get("path", "prefix-path.jsonl")
   family_file = metadata_files.get("family", "asn-family.json")
   required = [
-      "china.txt", "china6.txt", "china46.txt",
-      "chinanet.txt", "chinanet6.txt", "chinanet46.txt",
-      "telecom.txt", "cmcc.txt", "unicom.txt", "cernet.txt", "cstnet.txt",
-      "cloudflare.txt", "aliyun.txt", "tencent.txt", "ucloud.txt", "ixp.txt",
       owner_file, asn_file, path_file,
       family_file, "manifest.json",
+      "china.txt", "china6.txt", "china46.txt",
   ]
-  missing = [name for name in required if not (result / name).is_file()]
+  for rule in config["assets"].values():
+      for basename in rule.get("outputs", []):
+          required.extend([
+              f"{basename}.txt",
+              f"{basename}6.txt",
+              f"{basename}46.txt",
+          ])
+  missing = sorted({name for name in required if not (result / name).is_file()})
   if missing:
       raise SystemExit(f"missing outputs: {', '.join(missing)}")
 
