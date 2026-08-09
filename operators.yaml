@@ -47,7 +47,7 @@ assets:
     exclude:
       origin_asn: [37968]
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [cnixp, ixp]
+    outputs: [cnixp]
 
   aliyuncn:
     type: cloud
@@ -65,7 +65,7 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
-    outputs: [aliyuncn, aliyun]
+    outputs: [aliyuncn]
 
   tencentcn:
     type: cloud
@@ -83,7 +83,7 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
-    outputs: [tencentcn, tencent]
+    outputs: [tencentcn]
 
   volcanoenginecn:
     type: cloud
@@ -102,7 +102,7 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [volcanoenginecn, volcanoengine]
+    outputs: [volcanoenginecn]
 
   ucloudcn:
     type: cloud
@@ -121,7 +121,7 @@ assets:
     exclude:
       origin_asn: [135377]
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [ucloudcn, ucloud]
+    outputs: [ucloudcn]
 
   baiducn:
     type: cloud
@@ -140,7 +140,7 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [baiducn, baidu]
+    outputs: [baiducn]
 
   cloudflare:
     type: cdn
@@ -231,7 +231,7 @@ assets:
       whois_org:
         - 'Alibaba|Aliyun|Tencent|UCloud|SHIXP|CNIXP|ByteDance|Volcano Engine'
       country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
-    outputs: [chinanet, telecom]
+    outputs: [chinanet]
 
   cmcc:
     type: carrier
