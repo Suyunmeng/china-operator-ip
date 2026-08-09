@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     asn_graph::FamilyMembership,
-    config::{AssetRule, Config, MatchConditions},
+    config::{AssetRule, Config},
     model::{AsnRecord, BgpObservation, Classification, GeoLocation, WhoisRecord},
 };
 

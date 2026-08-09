@@ -479,11 +479,12 @@ mod tests {
         assert_eq!(prefixes.first().unwrap().to_string(), "203.0.113.1/32");
         assert_eq!(prefixes.last().unwrap().to_string(), "203.0.113.254/32");
         assert!(prefixes.iter().all(|prefix| {
-            prefix.network() >= "203.0.113.1".parse().unwrap()
-                && prefix.broadcast() <= "203.0.113.254".parse().unwrap()
+            prefix.network() >= "203.0.113.1".parse::<IpAddr>().unwrap()
+                && prefix.broadcast() <= "203.0.113.254".parse::<IpAddr>().unwrap()
         }));
     }
 
+    #[test]
     fn lookup_finds_less_specific_parent_prefix() {
         let mut index = WhoisIndex {
             v4: (0..=32).map(|_| HashMap::new()).collect(),

@@ -40,7 +40,7 @@ impl GeoIndex {
                 );
             }
             entries.push((
-                fields[0].parse().with_context(|| {
+                fields[0].parse::<IpNet>().with_context(|| {
                     format!(
                         "invalid geo prefix at {}:{}",
                         path.display(),
