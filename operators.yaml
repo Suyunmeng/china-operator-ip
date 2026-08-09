@@ -142,6 +142,16 @@ assets:
       country: [HK, MO, TW, US, SG, JP]
     outputs: [baiducn]
 
+  bgpgdcn:
+    type: cloud
+    owner: Dongguan Xingxiu Technology Co., Ltd
+    priority: 925
+    match:
+      whois_org:
+        - '^Dongguan Xingxiu Technology Co\\., Ltd$'
+      country: [CN]
+    outputs: [bgpgdcn]
+
   cloudflare:
     type: cdn
     owner: Cloudflare
