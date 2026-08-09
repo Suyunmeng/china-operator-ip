@@ -39,7 +39,7 @@ pub fn write_all(
                     .or_default()
                     .insert(owner.prefix);
             }
-            if rule.include_in_china {
+            if owner.include_in_china {
                 lists
                     .entry("china".to_string())
                     .or_default()
@@ -151,4 +151,88 @@ fn write_manifest(dir: &Path, classified: usize) -> Result<()> {
             "files": files,
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_output_basename_aggregates_assets() {
+        let mut config: Config = serde_yaml::from_str(
+            r#"
+version: 1
+assets:
+  first:
+    type: ixp
+    owner: First
+    priority: 2
+    match:
+      origin_asn: [64500]
+    outputs: [ixp]
+  second:
+    type: ixp
+    owner: Second
+    priority: 1
+    match:
+      origin_asn: [64501]
+    outputs: [ixp]
+"#,
+        )
+        .unwrap();
+        config.validate_and_compile().unwrap();
+        let record = |prefix: &str, asset: &str| {
+            (
+                PrefixMetadata {
+                    prefix: prefix.parse().unwrap(),
+                    ip_version: 4,
+                    asset: asset.to_string(),
+                    origin_asn: vec![64500],
+                    asn_path: vec![64500],
+                    owner: asset.to_string(),
+                    asset_type: "ixp".to_string(),
+                    include_in_china: true,
+                    operator_family: None,
+                    whois_org: Some(asset.to_string()),
+                    org_id: None,
+                    maintainer: Vec::new(),
+                    netname: Some(asset.to_string()),
+                    rir: "APNIC".to_string(),
+                    country: Some("CN".to_string()),
+                    geo_location: None,
+                    match_rule: format!("{asset}:owner"),
+                    match_source: "whois-owner".to_string(),
+                    confidence_score: 95,
+                    last_seen: 1,
+                },
+                PrefixAsnMetadata {
+                    prefix: prefix.parse().unwrap(),
+                    origin_asn: vec![64500],
+                    origin_asn_family: Vec::new(),
+                    peer_asn: Vec::new(),
+                    collectors: Vec::new(),
+                    last_seen: 1,
+                },
+                PrefixPathMetadata {
+                    prefix: prefix.parse().unwrap(),
+                    origin_asn: vec![64500],
+                    asn_path: vec![64500],
+                    transit_asn: Vec::new(),
+                    peer_asn: Vec::new(),
+                    collectors: Vec::new(),
+                    last_seen: 1,
+                },
+            )
+        };
+        let classified = vec![
+            record("203.0.113.0/24", "first"),
+            record("198.51.100.0/24", "second"),
+        ];
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("result");
+        write_all(&output, &config, &classified, &BTreeMap::new()).unwrap();
+        let list = fs::read_to_string(output.join("ixp.txt")).unwrap();
+        assert!(list.contains("198.51.100.0/24"));
+        assert!(list.contains("203.0.113.0/24"));
+    }
 }

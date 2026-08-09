@@ -54,6 +54,10 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
             rejected_unclassified += 1;
             continue;
         };
+        let include_in_china = config
+            .assets
+            .get(&classification.asset)
+            .is_some_and(|rule| rule.include_in_china);
         let family_names: Vec<_> = observation
             .origin_asns
             .iter()
@@ -72,6 +76,7 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                 asn_path: observation.asn_path.clone(),
                 owner: classification.owner,
                 asset_type: classification.asset_type,
+                include_in_china,
                 operator_family: classification.operator_family,
                 whois_org: owner_record.whois_org.clone(),
                 org_id: owner_record.org_id.clone(),

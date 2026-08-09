@@ -91,6 +91,7 @@ pub struct PrefixMetadata {
     pub asn_path: Vec<u32>,
     pub owner: String,
     pub asset_type: String,
+    pub include_in_china: bool,
     pub operator_family: Option<String>,
     pub whois_org: Option<String>,
     pub org_id: Option<String>,

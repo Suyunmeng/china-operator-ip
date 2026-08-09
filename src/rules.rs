@@ -31,18 +31,15 @@ pub fn classify(
         if matches_exclude(rule, observation, whois, asn_records, geo) {
             continue;
         }
-        if let Some(candidate) = owner_candidate(asset, rule, observation, whois, geo) {
+        if let Some(candidate) = owner_candidate(asset, rule, observation, whois) {
             candidates.push(candidate);
             continue;
         }
-        if let Some(candidate) =
-            family_candidate(asset, rule, observation, whois, asn_records, families)
-        {
+        if let Some(candidate) = family_candidate(asset, rule, observation, whois, families) {
             candidates.push(candidate);
             continue;
         }
-        if let Some(candidate) = origin_candidate(asset, rule, observation, whois, asn_records, geo)
-        {
+        if let Some(candidate) = origin_candidate(asset, rule, observation, whois, asn_records) {
             candidates.push(candidate);
             continue;
         }
@@ -70,7 +67,6 @@ fn owner_candidate(
     rule: &AssetRule,
     observation: &BgpObservation,
     whois: Option<&WhoisRecord>,
-    geo: Option<&GeoLocation>,
 ) -> Option<Candidate> {
     let whois = whois?;
     let mut matched = Vec::new();
@@ -96,9 +92,6 @@ fn owner_candidate(
     {
         return None;
     }
-    if !rule.compiled.geo.is_empty() && !matches_geo(&rule.compiled.geo, geo) {
-        return None;
-    }
     if matched.is_empty() || !owner_constraints_match(rule, observation) {
         return None;
     }
@@ -122,10 +115,9 @@ fn family_candidate(
     rule: &AssetRule,
     observation: &BgpObservation,
     whois: Option<&WhoisRecord>,
-    asn_records: &BTreeMap<u32, AsnRecord>,
     families: &BTreeMap<u32, FamilyMembership>,
 ) -> Option<Candidate> {
-    if whois_conflicts_with_rule(rule, whois, observation, asn_records) {
+    if whois_conflicts_with_rule(rule, whois) {
         return None;
     }
     let membership = observation
@@ -158,9 +150,8 @@ fn origin_candidate(
     observation: &BgpObservation,
     whois: Option<&WhoisRecord>,
     asn_records: &BTreeMap<u32, AsnRecord>,
-    geo: Option<&GeoLocation>,
 ) -> Option<Candidate> {
-    if whois_conflicts_with_rule(rule, whois, observation, asn_records) {
+    if whois_conflicts_with_rule(rule, whois) {
         return None;
     }
     let origin_match = rule
@@ -173,13 +164,10 @@ fn origin_candidate(
             matches_regex_text(&rule.compiled.asn_org, &record.searchable_text())
         })
     });
-    let geo_matches = rule.compiled.geo.is_empty() || matches_geo(&rule.compiled.geo, geo);
-    if (!origin_match && !asn_org_match) || !geo_matches {
+    if !origin_match && !asn_org_match {
         return None;
     }
-    let specificity = usize::from(origin_match)
-        + usize::from(asn_org_match)
-        + usize::from(!rule.compiled.geo.is_empty());
+    let specificity = usize::from(origin_match) + usize::from(asn_org_match);
     Some(Candidate {
         classification: Classification {
             asset: asset.to_string(),
@@ -205,20 +193,14 @@ fn origin_candidate(
     })
 }
 
-fn whois_conflicts_with_rule(
-    rule: &AssetRule,
-    whois: Option<&WhoisRecord>,
-    observation: &BgpObservation,
-    asn_records: &BTreeMap<u32, AsnRecord>,
-) -> bool {
+fn whois_conflicts_with_rule(rule: &AssetRule, whois: Option<&WhoisRecord>) -> bool {
     let Some(whois) = whois else {
         return true;
     };
-    let prefix_owner = whois.searchable_owner_text();
-    let owner_matches = matches_regex_text(&rule.compiled.whois_org, &prefix_owner)
-        || matches_regex_text(&rule.compiled.org_id, &prefix_owner)
-        || matches_regex_text(&rule.compiled.maintainer, &prefix_owner)
-        || matches_regex_text(&rule.compiled.netname, &prefix_owner);
+    let owner_matches = matches_regex_field(&rule.compiled.whois_org, whois.whois_org.as_deref())
+        || matches_regex_field(&rule.compiled.org_id, whois.org_id.as_deref())
+        || matches_regex_values(&rule.compiled.maintainer, &whois.maintainers)
+        || matches_regex_field(&rule.compiled.netname, whois.netname.as_deref());
     if owner_matches {
         return false;
     }
@@ -226,12 +208,7 @@ fn whois_conflicts_with_rule(
         || whois.org_id.is_some()
         || whois.netname.is_some()
         || !whois.maintainers.is_empty();
-    let asn_owner_matches = observation.origin_asns.iter().any(|asn| {
-        asn_records.get(asn).is_some_and(|record| {
-            matches_regex_text(&rule.compiled.asn_org, &record.searchable_text())
-        })
-    });
-    owner_present && !asn_owner_matches
+    owner_present
 }
 
 fn fallback_candidate(
@@ -486,6 +463,37 @@ assets:
                 &observation(),
                 Some(&whois),
                 &BTreeMap::new(),
+                &BTreeMap::new(),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn asn_name_match_does_not_override_unrelated_prefix_owner() {
+        let whois = WhoisRecord {
+            country: Some("CN".to_string()),
+            whois_org: Some("Independent Customer Network".to_string()),
+            org_id: Some("ORG-CUSTOMER".to_string()),
+            netname: Some("CUSTOMER-NET".to_string()),
+            ..WhoisRecord::default()
+        };
+        let asn_records = BTreeMap::from([(
+            4134,
+            AsnRecord {
+                asn: 4134,
+                as_name: Some("CHINANET-BACKBONE".to_string()),
+                organisation: Some("China Telecom".to_string()),
+                ..AsnRecord::default()
+            },
+        )]);
+        assert_eq!(
+            classify(
+                &config(),
+                &observation(),
+                Some(&whois),
+                &asn_records,
                 &BTreeMap::new(),
                 None,
             ),

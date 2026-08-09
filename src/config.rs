@@ -219,6 +219,11 @@ impl Config {
             if rule.match_.is_empty() && !rule.fallback {
                 bail!("asset {id} has neither match conditions nor fallback: true");
             }
+            if !rule.match_.geo.is_empty() {
+                bail!(
+                    "asset {id} uses match.geo, but Geo may only enrich metadata or exclude locations"
+                );
+            }
             if !rule.match_.transit_asn.is_empty()
                 && rule.match_.whois_org.is_empty()
                 && rule.match_.org_id.is_empty()
@@ -243,7 +248,7 @@ fn validate_output_names(
     assets: &BTreeMap<String, AssetRule>,
     metadata: &MetadataFiles,
 ) -> Result<()> {
-    let mut filenames = BTreeMap::new();
+    let mut reserved = BTreeMap::new();
     for (filename, owner) in [
         (metadata.owner.as_str(), "metadata.owner"),
         (metadata.asn.as_str(), "metadata.asn"),
@@ -254,28 +259,40 @@ fn validate_output_names(
         ("china6.txt", "aggregate china IPv6"),
         ("china46.txt", "aggregate china dual-stack"),
     ] {
-        if let Some(previous) = filenames.insert(filename.to_string(), owner.to_string()) {
+        if let Some(previous) = reserved.insert(filename.to_string(), owner.to_string()) {
             bail!("{owner} collides with {previous} at generated file {filename}");
         }
     }
+    let mut output_families: BTreeMap<String, String> = BTreeMap::new();
     for (asset, rule) in assets {
         let basenames: Vec<_> = if rule.outputs.is_empty() {
             vec![asset.as_str()]
         } else {
             rule.outputs.iter().map(String::as_str).collect()
         };
+        let mut seen = BTreeMap::new();
         for basename in basenames {
+            if seen.insert(basename, ()).is_some() {
+                bail!("asset {asset} repeats output basename {basename}");
+            }
             for filename in [
                 format!("{basename}.txt"),
                 format!("{basename}6.txt"),
                 format!("{basename}46.txt"),
             ] {
-                if let Some(previous) = filenames.insert(filename.clone(), format!("asset {asset}"))
-                {
+                if let Some(previous) = reserved.get(&filename) {
                     bail!(
                         "asset {asset} output collides with {previous} at generated file {filename}"
                     );
                 }
+                if let Some(previous_basename) = output_families.get(&filename)
+                    && previous_basename != basename
+                {
+                    bail!(
+                        "asset {asset} output basename {basename} collides with output basename {previous_basename} at generated file {filename}"
+                    );
+                }
+                output_families.insert(filename, basename.to_string());
             }
         }
     }
@@ -373,6 +390,47 @@ assets:
 "#;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn positive_geo_matches_are_rejected() {
+        let yaml = r#"
+version: 1
+assets:
+  geo_owned:
+    type: enterprise
+    owner: Geo Owned
+    priority: 1
+    match:
+      whois_org: ["Example"]
+      geo: ["Beijing"]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn shared_output_basename_is_allowed() {
+        let yaml = r#"
+version: 1
+assets:
+  first:
+    type: ixp
+    owner: First
+    priority: 2
+    match:
+      origin_asn: [64500]
+    outputs: [ixp]
+  second:
+    type: ixp
+    owner: Second
+    priority: 1
+    match:
+      origin_asn: [64501]
+    outputs: [ixp]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
     }
 
     #[test]

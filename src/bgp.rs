@@ -56,16 +56,20 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
         .into_iter()
         .map(|(prefix, aggregate)| {
             let asn_path = select_representative_path(&aggregate.paths, &aggregate.origin_asns);
+            let mut origin_asns = BTreeSet::new();
+            if let Some(origin) = asn_path.last() {
+                origin_asns.insert(*origin);
+            }
             let transit_asns = asn_path
                 .iter()
                 .copied()
-                .filter(|asn| !aggregate.origin_asns.contains(asn))
+                .filter(|asn| !origin_asns.contains(asn))
                 .collect();
             (
                 prefix,
                 BgpObservation {
                     prefix,
-                    origin_asns: aggregate.origin_asns,
+                    origin_asns,
                     asn_path,
                     transit_asns,
                     peer_asns: aggregate.peers,
@@ -118,6 +122,22 @@ mod tests {
             select_representative_path(&paths, &BTreeSet::from([4134])),
             vec![64500, 4134]
         );
+    }
+
+    #[test]
+    fn representative_path_selects_single_current_origin() {
+        let paths = BTreeMap::from([(vec![64500, 4134], 5), (vec![64501, 64502], 1)]);
+        let observed = BTreeSet::from([4134, 64502]);
+        let path = select_representative_path(&paths, &observed);
+        let origins = path.last().copied().into_iter().collect::<BTreeSet<_>>();
+        let transit = path
+            .iter()
+            .copied()
+            .filter(|asn| !origins.contains(asn))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(origins, BTreeSet::from([4134]));
+        assert_eq!(transit, BTreeSet::from([64500]));
+        assert!(!transit.contains(&64502));
     }
 
     #[test]

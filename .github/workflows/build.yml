@@ -57,6 +57,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: cargo-bins/cargo-binstall@main
       - uses: extractions/setup-just@v3
+      - name: Install guard dependencies
+        run: python -m pip install --disable-pip-version-check PyYAML
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: source

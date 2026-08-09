@@ -62,6 +62,8 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 - `baiducn*` / `baidu*`
 - `shixpcn*` / `shixp*`
 - `cnixp*`
+- `ixp*`（SHIXP 与 CNIXP 聚合）
+- `cloudflare*`（兼容保留）
 
 ### Metadata
 
@@ -84,6 +86,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
   "asn_path": [64496, 64500],
   "owner": "Example Network",
   "asset_type": "enterprise",
+  "include_in_china": true,
   "operator_family": null,
   "whois_org": "Example Network",
   "org_id": "ORG-EXAMPLE",
@@ -112,7 +115,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 - `match.maintainer`
 - `match.netname`
 - `match.country`
-- `match.geo`
+- `exclude.geo`（仅用于位置排除；`match.geo` 会被配置校验拒绝）
 - `match.asn_org`
 - 对称的 `exclude` 条件
 - `outputs`、`include_in_china`、`fallback`
@@ -120,6 +123,8 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 所有资产都必须保持 `require_domestic: true`（默认值）；显式设为 `false` 会被配置校验拒绝，避免海外 Prefix 进入中国资产结果。
 
 文本字段是大小写不敏感正则。配置启用 `deny_unknown_fields`，拼错字段会导致生成失败，而不是被静默忽略。
+
+规则可以让多个资产共享聚合输出名，例如 SHIXP、CNIXP 同时写入 `ixp.txt`；同一规则内重复输出名仍会被拒绝。
 
 示例：
 

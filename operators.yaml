@@ -28,7 +28,7 @@ assets:
     exclude:
       origin_asn: [146762]
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [shixpcn, shixp]
+    outputs: [shixpcn, shixp, ixp]
 
   cnixp:
     type: ixp
@@ -47,7 +47,7 @@ assets:
     exclude:
       origin_asn: [37968]
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [cnixp]
+    outputs: [cnixp, ixp]
 
   aliyuncn:
     type: cloud
@@ -142,6 +142,24 @@ assets:
       country: [HK, MO, TW, US, SG, JP]
     outputs: [baiducn, baidu]
 
+  cloudflare:
+    type: cdn
+    owner: Cloudflare
+    priority: 920
+    match:
+      whois_org:
+        - 'Cloudflare'
+      org_id:
+        - 'CLOUDFLARE'
+      maintainer:
+        - 'CLOUDFLARE'
+      netname:
+        - 'CLOUDFLARE'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    outputs: [cloudflare]
+
   cernet:
     type: education
     owner: China Education and Research Network
@@ -149,7 +167,7 @@ assets:
     priority: 500
     roots: [4538]
     match:
-      origin_asn: [4538, 7497]
+      origin_asn: [4538]
       whois_org:
         - 'CERNET|China Education and Research Network'
       org_id:

@@ -105,24 +105,32 @@ guard:
   import ipaddress
   import json
   from pathlib import Path
+  import yaml
 
   result = Path("result")
+  config = yaml.safe_load(Path("operators.yaml").read_text(encoding="utf-8"))
+  metadata_files = config.get("settings", {}).get("metadata_files", {})
+  owner_file = metadata_files.get("owner", "prefix-owner.jsonl")
+  asn_file = metadata_files.get("asn", "prefix-asn.jsonl")
+  path_file = metadata_files.get("path", "prefix-path.jsonl")
+  family_file = metadata_files.get("family", "asn-family.json")
   required = [
       "china.txt", "china6.txt", "china46.txt",
       "chinanet.txt", "chinanet6.txt", "chinanet46.txt",
       "telecom.txt", "cmcc.txt", "unicom.txt", "cernet.txt", "cstnet.txt",
-      "prefix-owner.jsonl", "prefix-asn.jsonl", "prefix-path.jsonl",
-      "asn-family.json", "manifest.json",
+      "cloudflare.txt", "aliyun.txt", "tencent.txt", "ucloud.txt", "ixp.txt",
+      owner_file, asn_file, path_file,
+      family_file, "manifest.json",
   ]
   missing = [name for name in required if not (result / name).is_file()]
   if missing:
       raise SystemExit(f"missing outputs: {', '.join(missing)}")
 
   announced = set()
-  announced_v4 = set()
-  announced_v6 = set()
+  china_v4 = set()
+  china_v6 = set()
   metadata = {}
-  with (result / "prefix-owner.jsonl").open(encoding="utf-8") as stream:
+  with (result / owner_file).open(encoding="utf-8") as stream:
       for line_number, line in enumerate(stream, 1):
           row = json.loads(line)
           prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
@@ -132,26 +140,46 @@ guard:
               raise SystemExit(f"wrong ip_version at line {line_number}: {prefix}")
           if not row.get("origin_asn"):
               raise SystemExit(f"missing origin ASN: {prefix}")
-          if not row.get("whois_org") and not row.get("netname"):
+          if not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
               raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
           metadata[prefix] = row
           announced.add(prefix)
-          if row["ip_version"] == 4:
-              announced_v4.add(prefix)
-          else:
-              announced_v6.add(prefix)
+          if row.get("include_in_china", True):
+              if row["ip_version"] == 4:
+                  china_v4.add(prefix)
+              else:
+                  china_v6.add(prefix)
   if not metadata:
-      raise SystemExit("prefix-owner.jsonl is empty")
+      raise SystemExit(f"{owner_file} is empty")
 
   expected_china = {
-      "china.txt": announced_v4,
-      "china6.txt": announced_v6,
-      "china46.txt": announced,
+      "china.txt": china_v4,
+      "china6.txt": china_v6,
+      "china46.txt": china_v4 | china_v6,
   }
-  for name, expected in expected_china.items():
+  expected_outputs = {}
+  for asset, rule in config["assets"].items():
+      basenames = rule.get("outputs") or [asset]
+      prefixes = {
+          prefix for prefix, row in metadata.items() if row["asset"] == asset
+      }
+      versions = {
+          4: {prefix for prefix in prefixes if metadata[prefix]["ip_version"] == 4},
+          6: {prefix for prefix in prefixes if metadata[prefix]["ip_version"] == 6},
+      }
+      for basename in basenames:
+          expected_outputs.setdefault(f"{basename}.txt", set()).update(versions[4])
+          expected_outputs.setdefault(f"{basename}6.txt", set()).update(versions[6])
+          expected_outputs.setdefault(f"{basename}46.txt", set()).update(prefixes)
+  expected_outputs.update(expected_china)
+
+  for name, expected in expected_outputs.items():
+      path = result / name
+      if not path.is_file():
+          raise SystemExit(f"missing configured output: {name}")
       actual = {
           str(ipaddress.ip_network(line, strict=True))
-          for line in (result / name).read_text(encoding="utf-8").splitlines()
+          for line in path.read_text(encoding="utf-8").splitlines()
           if line
       }
       if actual != expected:
