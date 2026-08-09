@@ -6,7 +6,6 @@ import struct
 from collections import defaultdict
 
 COUNTRY_POSITION = (0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3)
-ISP_POSITION = (0, 0, 0, 0, 6, 6, 6, 6, 6, 6, 6, 6, 6)
 
 
 class IP2ProxyDatabase:
@@ -23,8 +22,8 @@ class IP2ProxyDatabase:
         self.ipv6_addr = struct.unpack_from("<I", header, 17)[0]
         if header[29] != 2:
             raise ValueError("database is not an IP2Proxy BIN file")
-        if self.db_type >= len(COUNTRY_POSITION) or ISP_POSITION[self.db_type] == 0:
-            raise ValueError("database does not provide the ISP field required by isp_pattern")
+        if self.db_type >= len(COUNTRY_POSITION):
+            raise ValueError("database does not provide the country field")
 
     def close(self):
         self.file.close()
@@ -77,16 +76,11 @@ class IP2ProxyDatabase:
     def _fields(self, row, version):
         prefix = 0 if version == 4 else 12
         country_offset = prefix + 4 * (COUNTRY_POSITION[self.db_type] - 1)
-        isp_offset = prefix + 4 * (ISP_POSITION[self.db_type] - 1)
         country_pointer = struct.unpack_from("<I", row, country_offset)[0]
-        isp_pointer = struct.unpack_from("<I", row, isp_offset)[0]
         self.file.seek(country_pointer)
         country_length = self.file.read(1)[0]
         country = self.file.read(country_length).decode("iso-8859-1")
-        self.file.seek(isp_pointer)
-        isp_length = self.file.read(1)[0]
-        isp = self.file.read(isp_length).decode("iso-8859-1")
-        return country, isp
+        return country
 
 
 def parse_networks(path):
@@ -113,13 +107,11 @@ def main():
     parser.add_argument("--database", required=True)
     parser.add_argument("--network-file", required=True)
     parser.add_argument("--country", default="")
-    parser.add_argument("--isp-pattern", default="")
     args = parser.parse_args()
 
     country = args.country.upper()
     if country and not re.fullmatch(r"[A-Z]{2}", country):
         parser.error("--country must be an ISO 3166-1 alpha-2 code")
-    isp_pattern = re.compile(args.isp_pattern, re.IGNORECASE) if args.isp_pattern else None
 
     database = IP2ProxyDatabase(args.database)
     try:
@@ -131,11 +123,9 @@ def main():
                 lookup = database.lookup(network.network_address.__class__(current))
                 if lookup is None:
                     break
-                record_end, (record_country, record_isp) = lookup
+                record_end, record_country = lookup
                 selected_end = min(end, record_end - 1)
-                if (not country or record_country.upper() == country) and (
-                    isp_pattern is None or isp_pattern.search(record_isp)
-                ):
+                if not country or record_country.upper() == country:
                     selected[network.version].append((current, selected_end))
                 current = selected_end + 1
 

@@ -249,28 +249,51 @@ networksdb_networks operator:
   abort("networksdb is disabled for #{operator}") unless cfg.fetch("networksdb", false)
   country = cfg.fetch("country")
   abort("country must be a two-letter country code for #{operator}") unless country.match?(/\A[A-Z]{2}\z/)
-  orgid = cfg.fetch("orgid")
-  abort("orgid must be non-empty for #{operator}") if orgid.empty?
   token = ENV.fetch("NETWORKSDB_TOKEN") { abort("NETWORKSDB_TOKEN is required for #{operator}") }
+  orgids = if cfg.key?("org_id_search")
+    org_id_search = cfg.fetch("org_id_search")
+    org_id_country = cfg.fetch("org_id_country", "")
+    abort("org_id_search must be a non-empty list for #{operator}") unless org_id_search.is_a?(Array) && !org_id_search.empty? && org_id_search.all? { |query| query.is_a?(String) && !query.empty? }
+    abort("org_id_country must be a two-letter country code for #{operator}") unless org_id_country.empty? || org_id_country.match?(/\A[A-Z]{2}\z/)
 
-  [false, true].each do |ipv6|
-    page = 1
-    loop do
-      uri = URI("https://networksdb.io/api/org-networks")
-      params = {id: orgid, page: page}
-      params[:ipv6] = "true" if ipv6
+    org_id_search.flat_map do |query|
+      uri = URI("https://networksdb.io/api/org-search")
+      params = {search: query}
+      params[:country] = org_id_country unless org_id_country.empty?
       uri.query = URI.encode_www_form(params)
       request = Net::HTTP::Get.new(uri)
       request["X-Api-Key"] = token
       response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
-      abort("NetworksDB request failed for #{operator}: HTTP #{response.code}") unless response.is_a?(Net::HTTPSuccess)
-      body = JSON.parse(response.body)
-      results = body.fetch("results")
-      results.each do |network|
-        puts network.fetch("cidr") if network.fetch("countrycode").casecmp?(country)
+      abort("NetworksDB organisation search failed for #{operator}: HTTP #{response.code}") unless response.is_a?(Net::HTTPSuccess)
+      JSON.parse(response.body).fetch("results").map { |organisation| organisation.fetch("id") }
+    end.uniq
+  else
+    orgids = Array(cfg.fetch("org_id"))
+    abort("org_id must contain at least one non-empty string for #{operator}") unless orgids.any? && orgids.all? { |orgid| orgid.is_a?(String) && !orgid.empty? }
+    orgids.uniq
+  end
+  abort("NetworksDB organisation search returned no org_id values for #{operator}") if orgids.empty?
+
+  orgids.each do |orgid|
+    [false, true].each do |ipv6|
+      page = 1
+      loop do
+        uri = URI("https://networksdb.io/api/org-networks")
+        params = {id: orgid, page: page}
+        params[:ipv6] = "true" if ipv6
+        uri.query = URI.encode_www_form(params)
+        request = Net::HTTP::Get.new(uri)
+        request["X-Api-Key"] = token
+        response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
+        abort("NetworksDB request failed for #{operator}: HTTP #{response.code}") unless response.is_a?(Net::HTTPSuccess)
+        body = JSON.parse(response.body)
+        results = body.fetch("results")
+        results.each do |network|
+          puts network.fetch("cidr") if network.fetch("countrycode").casecmp?(country)
+        end
+        break if results.empty? || page * 1000 >= body.fetch("total")
+        page += 1
       end
-      break if results.empty? || page * 1000 >= body.fetch("total")
-      page += 1
     end
   end
 
@@ -294,10 +317,8 @@ gen operator:
   cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
   origin_only = cfg.fetch("origin_only", false)
   ip_country = cfg.fetch("ip_country", "")
-  isp_pattern = cfg.fetch("isp_pattern", "")
-  ip_filter_enabled = !ip_country.empty? || !isp_pattern.empty?
+  ip_filter_enabled = !ip_country.empty?
   abort("ip_country must be a two-letter country code for #{operator}") unless ip_country.empty? || ip_country.match?(/\A[A-Z]{2}\z/)
-  abort("ip_country and isp_pattern must be configured together for #{operator}") unless ip_country.empty? == isp_pattern.empty?
 
   ribs = Dir["rib-*.{gz,bz2}"].sort
   abort("No rib-*.gz or rib-*.bz2 files found. Run 'just prepare_ribs' first.") if ribs.empty?
@@ -309,8 +330,15 @@ gen operator:
   if cfg.fetch("networksdb", false)
     country = cfg.fetch("country")
     abort("country must be a two-letter country code for #{operator}") unless country.match?(/\A[A-Z]{2}\z/)
-    orgid = cfg.fetch("orgid")
-    abort("orgid must be non-empty for #{operator}") if orgid.empty?
+    if cfg.key?("org_id_search")
+      org_id_search = cfg.fetch("org_id_search")
+      org_id_country = cfg.fetch("org_id_country", "")
+      abort("org_id_search must be a non-empty list for #{operator}") unless org_id_search.is_a?(Array) && !org_id_search.empty? && org_id_search.all? { |query| query.is_a?(String) && !query.empty? }
+      abort("org_id_country must be a two-letter country code for #{operator}") unless org_id_country.empty? || org_id_country.match?(/\A[A-Z]{2}\z/)
+    else
+      orgids = Array(cfg.fetch("org_id"))
+      abort("org_id must contain at least one non-empty string for #{operator}") unless orgids.any? && orgids.all? { |orgid| orgid.is_a?(String) && !orgid.empty? }
+    end
     abort("Failed to save NetworksDB networks for #{operator}") unless system("just", "save_networksdb_networks", operator)
     network_file = "result/.#{operator}.networksdb.txt"
     filter = ["target/release/networksdb-filter", "--network-file", network_file]
@@ -334,7 +362,7 @@ gen operator:
 
   if ip_filter_enabled
     filter = ["python3", "scripts/filter_ip2proxy.py", "--database", "IP2PROXY-LITE-PX7.BIN", "--network-file", raw_out]
-    filter += ["--country", ip_country, "--isp-pattern", isp_pattern]
+    filter += ["--country", ip_country]
     abort("Failed to filter #{operator} networks with IP2Proxy") unless system(*filter, out: out)
   else
     FileUtils.mv(raw_out, out, force: true)

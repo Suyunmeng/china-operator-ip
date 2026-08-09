@@ -1,14 +1,14 @@
 operators:
   cernet:
+    networksdb: true
     country: 'CN'
-    pattern: '(cngi|cernet)'
-    ip_country: ''
-    isp_pattern: ''
+    org_id: ['china-education-and-research-network-cernet','cernet-new-technology-co-ltd']
+    ip_country: 'CN'
+    exclude_asn: ['23764','58453','10099']
   china:
     country: 'CN'
     pattern: ''
     ip_country: ''
-    isp_pattern: ''
     origin_only: true
     # Experimental: exclude CN-registered ASNs whose observed direct upstreams
     # in the local RIB snapshot are all non-CN.
@@ -38,87 +38,76 @@ operators:
       - '209300'
       - '209306'
   chinanet:
+    networksdb: true
     country: 'CN'
-    pattern: ''
+    org_id_search: ['china-telecom']
+    org_id_country: 'CN'
     ip_country: 'CN'
-    isp_pattern: '(China Telecom|CHINANET|CHINATELECOM|P\.R\.China|ChinaTelecom|CHINA TELECOM|CT)'
-    downstream_asn: ['4134', '4809']
     exclude_asn: ['23764']
   cmcc:
+    networksdb: true
     country: 'CN'
-    pattern: '(china mobile|cmnet|tietong|CHINA RAILWAY)'
+    org_id_search: ['china-mobile']
+    org_id_country: 'CN'
     ip_country: 'CN'
-    isp_pattern: '(China Mobile|China TieTong|Mobile)'
-    downstream_asn: ['9808']
     exclude_asn: ['58453', '58807']
   cstnet:
     country: 'CN'
-    pattern: 'cstnet'
+    pattern: '(AS7497|AS38345|AS63555)'
     ip_country: ''
-    isp_pattern: ''
   drpeng:
     country: 'CN'
     pattern: '(dxtnet|dr.?peng|gxblnet|xirang)'
     ip_country: ''
-    isp_pattern: ''
   googlecn:
     country: 'CN'
     pattern: 'AS24424'
     ip_country: ''
-    isp_pattern: ''
   aliyuncn:
     country: 'CN'
     pattern: 'AS37963'
     ip_country: ''
-    isp_pattern: ''
   baiducn:
     country: 'CN'
     pattern: 'AS38365'
     ip_country: ''
-    isp_pattern: ''
   tencentcn:
     country: 'CN'
     pattern: 'AS45090'
     ip_country: ''
-    isp_pattern: ''
   unicom:
+    networksdb: true
     country: 'CN'
-    pattern: '(unicom|cnc)'
+    org_id_search: ['china-unicom']
+    org_id_country: 'CN'
     ip_country: 'CN'
-    isp_pattern: '(China Unicom|UNICOM)'
-    downstream_asn: ['4837', '9929']
     exclude_asn: ['10099']
   volcanoenginecn:
     country: 'CN'
     pattern: 'AS137718'
     ip_country: ''
-    isp_pattern: ''
   ucloudcn:
     networksdb: true
     country: 'CN'
-    orgid: 'shanghai-ucloud-information-technology-company-ltd'
+    org_id: ['shanghai-ucloud-information-technology-company-ltd']
     ip_country: ''
-    isp_pattern: ''
     exclude_asn:
       - '135377'
   cnixp:
     networksdb: true
     country: 'CN'
-    orgid: 'shenzhen-qianhai-new-type-internet-exchange-point-co-ltd'
+    org_id: ['shenzhen-qianhai-new-type-internet-exchange-point-co-ltd']
     ip_country: ''
-    isp_pattern: ''
     exclude_asn:
       - '37968'
   shixp:
     networksdb: true
     country: 'CN'
-    orgid: 'national-shanghai-new-type-internet-exchange-point'
+    org_id: ['national-shanghai-new-type-internet-exchange-point']
     ip_country: ''
-    isp_pattern: ''
     exclude_asn:
       - '146762'
   cloudflare:
     country: ''
     pattern: '(AS13335|AS14789|AS132892|AS209242|AS394536|AS395747|AS139242|AS202623|AS203898)'
     ip_country: ''
-    isp_pattern: ''
