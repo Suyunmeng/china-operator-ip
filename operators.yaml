@@ -1,89 +1,314 @@
-operators:
-  cernet:
-    networksdb: true
-    country: 'CN'
-    org_id: ['china-education-and-research-network-cernet','cernet-new-technology-co-ltd']
-    ip_country: 'CN'
-    exclude_asn: ['23764','58453','10099']
-  china:
-    country: 'CN'
-    pattern: ''
-    ip_country: ''
-    origin_only: true
-    # Retain routes only when their contiguous CN origin-side AS_PATH suffix
-    # contains a trusted domestic transit ASN before reaching foreign transit.
-    trusted_cn_transit_asn: ['4134', '4809', '4837', '9929', '9808', '4538', '7497']
-  chinanet:
-    networksdb: true
-    country: 'CN'
-    org_id_search: ['china-telecom']
-    org_id_country: 'CN'
-    ip_country: 'CN'
-    exclude_asn: ['23764']
-  cmcc:
-    networksdb: true
-    country: 'CN'
-    org_id_search: ['china-mobile']
-    org_id_country: 'CN'
-    ip_country: 'CN'
-    exclude_asn: ['58453', '58807']
-  cstnet:
-    country: 'CN'
-    pattern: '(AS7497|AS38345|AS63555)'
-    ip_country: ''
-  drpeng:
-    country: 'CN'
-    pattern: '(dxtnet|dr.?peng|gxblnet|xirang)'
-    ip_country: ''
-  googlecn:
-    country: 'CN'
-    pattern: 'AS24424'
-    ip_country: ''
-  aliyuncn:
-    country: 'CN'
-    pattern: 'AS37963'
-    ip_country: ''
-  baiducn:
-    country: 'CN'
-    pattern: 'AS38365'
-    ip_country: ''
-  tencentcn:
-    country: 'CN'
-    pattern: 'AS45090'
-    ip_country: ''
-  unicom:
-    networksdb: true
-    country: 'CN'
-    org_id_search: ['china-unicom']
-    org_id_country: 'CN'
-    ip_country: 'CN'
-    exclude_asn: ['10099']
-  volcanoenginecn:
-    country: 'CN'
-    pattern: 'AS137718'
-    ip_country: ''
-  ucloudcn:
-    networksdb: true
-    country: 'CN'
-    org_id: ['shanghai-ucloud-information-technology-company-ltd']
-    ip_country: ''
-    exclude_asn:
-      - '135377'
-  cnixp:
-    networksdb: true
-    country: 'CN'
-    org_id: ['shenzhen-qianhai-new-type-internet-exchange-point-co-ltd']
-    ip_country: ''
-    exclude_asn:
-      - '37968'
+version: 1
+
+settings:
+  domestic_country: CN
+  min_asn_family_score: 70
+  max_asn_family_depth: 2
+  metadata_files:
+    owner: prefix-owner.jsonl
+    asn: prefix-asn.jsonl
+    path: prefix-path.jsonl
+    family: asn-family.json
+
+assets:
   shixp:
-    networksdb: true
-    country: 'CN'
-    org_id: ['national-shanghai-new-type-internet-exchange-point']
-    ip_country: ''
-    exclude_asn:
-      - '146762'
-  cloudflare:
-    country: ''
-    pattern: '(AS13335|AS14789|AS132892|AS209242|AS394536|AS395747|AS139242|AS202623|AS203898)'
-    ip_country: ''
+    type: ixp
+    owner: National Shanghai New-Type Internet Exchange Point
+    priority: 1000
+    match:
+      whois_org:
+        - 'SHIXP|Shanghai New[- ]?Type Internet Exchange'
+      org_id:
+        - 'SHIXP|new[- ]?type.*internet exchange'
+      maintainer:
+        - 'SHIXP'
+      netname:
+        - 'SHIXP'
+      country: [CN]
+    exclude:
+      origin_asn: [146762]
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [shixpcn, shixp]
+
+  cnixp:
+    type: ixp
+    owner: Shenzhen Qianhai New-Type Internet Exchange Point
+    priority: 990
+    match:
+      whois_org:
+        - 'CNIXP|Qianhai.*Internet Exchange'
+      org_id:
+        - 'CNIXP|qianhai.*internet exchange'
+      maintainer:
+        - 'CNIXP'
+      netname:
+        - 'CNIXP'
+      country: [CN]
+    exclude:
+      origin_asn: [37968]
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [cnixp]
+
+  aliyuncn:
+    type: cloud
+    owner: Alibaba Cloud
+    priority: 950
+    match:
+      whois_org:
+        - 'Alibaba|Aliyun|AliCloud|Hangzhou Alibaba'
+      org_id:
+        - 'ALIBABA|ALIYUN|ALICLOUD'
+      maintainer:
+        - 'MAINT-ALIBABA|MAINT-ALIYUN|ALIYUN-MNT'
+      netname:
+        - 'ALIBABA|ALIYUN|ALICLOUD'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    outputs: [aliyuncn, aliyun]
+
+  tencentcn:
+    type: cloud
+    owner: Tencent Cloud
+    priority: 945
+    match:
+      whois_org:
+        - 'Tencent|Shenzhen Tencent'
+      org_id:
+        - 'TENCENT'
+      maintainer:
+        - 'TENCENT'
+      netname:
+        - 'TENCENT|QCLOUD'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    outputs: [tencentcn, tencent]
+
+  volcanoenginecn:
+    type: cloud
+    owner: Volcano Engine
+    priority: 940
+    match:
+      origin_asn: [137718]
+      whois_org:
+        - 'ByteDance|Volcano Engine|Beijing Volcano Engine'
+      org_id:
+        - 'BYTEDANCE|VOLCANO'
+      maintainer:
+        - 'BYTEDANCE|VOLCANO'
+      netname:
+        - 'BYTEDANCE|VOLCANO'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [volcanoenginecn, volcanoengine]
+
+  ucloudcn:
+    type: cloud
+    owner: UCloud
+    priority: 935
+    match:
+      whois_org:
+        - 'UCloud|Shanghai UCloud'
+      org_id:
+        - 'UCLOUD'
+      maintainer:
+        - 'UCLOUD'
+      netname:
+        - 'UCLOUD'
+      country: [CN]
+    exclude:
+      origin_asn: [135377]
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [ucloudcn, ucloud]
+
+  baiducn:
+    type: cloud
+    owner: Baidu Cloud
+    priority: 930
+    match:
+      origin_asn: [38365]
+      whois_org:
+        - 'Baidu'
+      org_id:
+        - 'BAIDU'
+      maintainer:
+        - 'BAIDU'
+      netname:
+        - 'BAIDU'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [baiducn, baidu]
+
+  cernet:
+    type: education
+    owner: China Education and Research Network
+    operator_family: cernet
+    priority: 500
+    roots: [4538, 7497]
+    match:
+      origin_asn: [4538, 7497]
+      whois_org:
+        - 'CERNET|China Education and Research Network'
+      org_id:
+        - 'CERNET'
+      maintainer:
+        - 'CERNET'
+      netname:
+        - 'CERNET'
+      asn_org:
+        - 'CERNET|China Education and Research Network'
+      country: [CN]
+    exclude:
+      origin_asn: [23764, 58453, 10099]
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [cernet]
+
+  cstnet:
+    type: research
+    owner: China Science and Technology Network
+    operator_family: cstnet
+    priority: 490
+    roots: [7497]
+    match:
+      origin_asn: [7497, 38345, 63555]
+      whois_org:
+        - 'CSTNET|China Science and Technology Network|Computer Network Information Center.*CAS'
+      org_id:
+        - 'CSTNET'
+      maintainer:
+        - 'CSTNET'
+      netname:
+        - 'CSTNET'
+      asn_org:
+        - 'CSTNET|China Science and Technology Network'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [cstnet]
+
+  chinanet:
+    type: carrier
+    owner: China Telecom
+    operator_family: chinanet
+    priority: 300
+    roots: [4134, 4809]
+    match:
+      origin_asn: [4134, 4809]
+      whois_org:
+        - 'China Telecom|CHINANET|ChinaNetCenter'
+      org_id:
+        - 'CHINANET|CHINA[- ]?TELECOM'
+      maintainer:
+        - 'MAINT-CHINANET|CHINANET-MNT|MAINT-CHINATELECOM'
+      netname:
+        - 'CHINANET|CHINATELECOM'
+      asn_org:
+        - 'CHINANET|China Telecom|CHINA TELECOM'
+      country: [CN]
+    exclude:
+      origin_asn: [23764]
+      whois_org:
+        - 'Alibaba|Aliyun|Tencent|UCloud|SHIXP|CNIXP|ByteDance|Volcano Engine'
+      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    outputs: [chinanet, telecom]
+
+  cmcc:
+    type: carrier
+    owner: China Mobile
+    operator_family: cmcc
+    priority: 290
+    roots: [9808]
+    match:
+      origin_asn: [9808]
+      whois_org:
+        - 'China Mobile|CMCC|China Tietong'
+      org_id:
+        - 'CHINA[- ]?MOBILE|CMCC|TIETONG'
+      maintainer:
+        - 'MAINT-CMCC|CMCC-MNT|MAINT-CN-CMCC'
+      netname:
+        - 'CMCC|CHINAMOBILE|TIETONG'
+      asn_org:
+        - 'China Mobile|CMCC|China Tietong'
+      country: [CN]
+    exclude:
+      origin_asn: [58453, 58807]
+      whois_org:
+        - 'Alibaba|Aliyun|Tencent|UCloud|SHIXP|CNIXP|ByteDance|Volcano Engine'
+      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    outputs: [cmcc]
+
+  unicom:
+    type: carrier
+    owner: China Unicom
+    operator_family: unicom
+    priority: 280
+    roots: [4837, 9929]
+    match:
+      origin_asn: [4837, 9929]
+      whois_org:
+        - 'China Unicom|UNICOM|China Netcom'
+      org_id:
+        - 'CHINA[- ]?UNICOM|UNICOM|NETCOM'
+      maintainer:
+        - 'MAINT-CNCGROUP|UNICOM-MNT|MAINT-CHINAUNICOM'
+      netname:
+        - 'UNICOM|CNCGROUP|NETCOM'
+      asn_org:
+        - 'China Unicom|UNICOM|China Netcom'
+      country: [CN]
+    exclude:
+      origin_asn: [10099]
+      whois_org:
+        - 'Alibaba|Aliyun|Tencent|UCloud|SHIXP|CNIXP|ByteDance|Volcano Engine'
+      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    outputs: [unicom]
+
+  drpeng:
+    type: idc
+    owner: Dr. Peng Group
+    priority: 700
+    match:
+      whois_org:
+        - 'Dr\.? Peng|Dianxin Tong|Great Wall Broadband|GXBLNET|XIRANG'
+      org_id:
+        - 'DRPENG|DXTNET|GXBLNET|XIRANG'
+      maintainer:
+        - 'DRPENG|DXTNET|GXBLNET|XIRANG'
+      netname:
+        - 'DRPENG|DXTNET|GXBLNET|XIRANG'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [drpeng]
+
+  googlecn:
+    type: enterprise
+    owner: Google China
+    priority: 800
+    match:
+      origin_asn: [24424]
+      whois_org:
+        - 'Google.*China|Beijing Gu Xiang'
+      org_id:
+        - 'GOOGLE'
+      maintainer:
+        - 'GOOGLE'
+      netname:
+        - 'GOOGLE'
+      country: [CN]
+    exclude:
+      country: [HK, MO, TW, US, SG, JP]
+    outputs: [googlecn]
+
+  domestic:
+    type: other
+    owner: China Network Asset
+    priority: 1
+    fallback: true
+    match:
+      country: [CN]
+    outputs: []

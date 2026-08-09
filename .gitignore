@@ -1,10 +1,5 @@
-asnames.txt
-autnums.html
-rib.*
-rib6.*
-rib-*
+data/
 result/
-analysis/
-*.bin
-.*.trusted-cn-transit.txt
+ip-lists/
 target/
+*.part

@@ -1,20 +1,14 @@
-name: Update IP2Proxy
+name: Retired IP2Proxy Workflow
 
+# IP2Proxy/IP2Location is intentionally not used. This file remains as a tombstone
+# so existing workflow links explain why the old scheduled job disappeared.
 on:
-  schedule:
-    - cron: '15 2 * * *'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  update:
+  retired:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
-      IP2LOCATION_DOWNLOAD_TOKEN: ${{ secrets.IP2LOCATION_DOWNLOAD_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: extractions/setup-just@v3
-      - run: just update_ip2proxy
+      - run: |
+          echo "IP2Proxy was removed from the asset ownership pipeline."
+          echo "BGP visibility and authoritative RIR WHOIS now drive generation."

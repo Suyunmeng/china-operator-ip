@@ -1,61 +1,82 @@
-name: Build
+name: Build and Generate
 
 on:
   push:
-    branches: [ '*' ]
+    branches: ['*']
   pull_request:
-    branches: [ '*' ]
-
+    branches: ['*']
   workflow_dispatch:
     inputs:
       update_ip_lists:
-        description: Update the ip-lists branch after a successful build
+        description: Update ip-lists after all checks succeed
         type: boolean
         required: true
         default: true
   schedule:
     - cron: '45 2 * * *'
 
+concurrency:
+  group: china-asset-pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: cargo-bins/cargo-binstall@main
-      - uses: extractions/setup-just@v3
-      - uses: actions/cache@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          key: ${{ runner.os }}-cargo-bin-${{ hashFiles('justfile') }}
-          restore-keys: ${{ runner.os }}-cargo-bin-
-          path: ~/.cargo/bin
-      - run: just dependency
-      - uses: nick-fields/retry@v3
-        env:
-          NETWORKSDB_TOKEN: ${{ secrets.NETWORKSDB_TOKEN }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-targets
+
+  generate:
+    needs: check
+    if: |
+      github.ref == 'refs/heads/master' && (
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.update_ip_lists)
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
         with:
-          timeout_minutes: 60
-          max_attempts: 3
-          command: just
-      - run: just guard
-      - name: Checkout ip-lists branch
-        uses: actions/checkout@v6
-        if: |
-          github.ref == 'refs/heads/master' && (
-            github.event_name == 'schedule' ||
-            (github.event_name == 'workflow_dispatch' && inputs.update_ip_lists)
-          )
+          path: source
+      - uses: actions/checkout@v6
         with:
           ref: ip-lists
-          path: ip-lists
-      - run: just upload
-        if: |
-          github.ref == 'refs/heads/master' && (
-            github.event_name == 'schedule' ||
-            (github.event_name == 'workflow_dispatch' && inputs.update_ip_lists)
-          )
-      - run: just refresh_jsdelivr ${{ github.repository }}
-        if: |
-          github.ref == 'refs/heads/master' && (
-            github.event_name == 'schedule' ||
-            (github.event_name == 'workflow_dispatch' && inputs.update_ip_lists)
-          )
+          path: source/ip-lists
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: cargo-bins/cargo-binstall@main
+      - uses: extractions/setup-just@v3
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: source
+      - uses: actions/cache@v5
+        with:
+          path: |
+            source/data/bgp
+            source/data/whois
+          key: network-assets-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            network-assets-${{ runner.os }}-
+      - name: Generate complete staged database
+        working-directory: source
+        run: just generate
+      - name: Validate BGP-only output invariant
+        working-directory: source
+        run: just guard
+      - name: Publish ip-lists atomically
+        working-directory: source
+        run: just upload
+      - name: Refresh jsDelivr
+        working-directory: source
+        run: just refresh_jsdelivr "${{ github.repository }}"

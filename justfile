@@ -1,437 +1,201 @@
 set unstable
-bgptools_version := "0.3.3"
 
-default: prepare all stat
+collectors := "rrc00 rrc12 rrc21 route-views2 route-views6"
 
-# Install or update bgp tooling dependencies
+whois_urls := "https://ftp.apnic.net/apnic/whois/apnic.db.inetnum.gz https://ftp.apnic.net/apnic/whois/apnic.db.inet6num.gz https://ftp.apnic.net/apnic/whois/apnic.db.aut-num.gz https://ftp.apnic.net/apnic/whois/apnic.db.organisation.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.inetnum.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.inet6num.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.aut-num.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.organisation.gz https://ftp.arin.net/pub/rr/arin.db.gz https://ftp.lacnic.net/lacnic/dbase/lacnic.db.gz https://ftp.afrinic.net/dbase/afrinic.db.gz"
+
+default: generate stat
+
+# Install the BGP broker and compile the classifier.
 dependency:
   #!/usr/bin/env bash
   set -euo pipefail
-
-  if ! bgptools --version 2>/dev/null | grep -F "{{bgptools_version}}" >/dev/null; then
-    cargo install --force --version "{{bgptools_version}}" bgptools
-  fi
-
   if ! bgpkit-broker --version >/dev/null 2>&1; then
     cargo binstall --secure --no-confirm bgpkit-broker@0.7.0
   fi
-
-  cargo build --release
-
-  bgptools --version
+  cargo build --locked --release
   bgpkit-broker --version
 
-# Download and normalize latest autnums list
-prepare_autnums:
-  #!/usr/bin/env bash
-  set -euo pipefail
-
-  urls=(
-    "https://bgp.potaroo.net/cidr/autnums.html"
-    "https://www.cidr-report.org/as2.0/autnums.html"
-  )
-
-  rm -f autnums.html asnames.txt
-  ok=0
-  for url in "${urls[@]}"; do
-    echo "INFO> fetching autnums from ${url}" >&2
-    if aria2c -s 4 -x 4 -q -o autnums.html --allow-overwrite=true "${url}" \
-      && awk -F'[<>]' '{print $3,$5}' autnums.html | grep '^AS' > asnames.txt \
-      && [[ -s asnames.txt ]]; then
-      ok=1
-      break
-    fi
-  done
-
-  if [[ "${ok}" != "1" ]]; then
-    echo "Failed to fetch or parse autnums from all known sources" >&2
-    exit 3
-  fi
-
-  rm -f autnums.html
-  echo "INFO> asnames.txt updated ($(wc -l < asnames.txt) entries)" >&2
-
-# Download the latest RIB snapshot for a collector
+# Download the latest RIB snapshot for one RouteViews/RIPE RIS collector.
 prepare_rib collector:
   #!/usr/bin/env bash
   set -euo pipefail
-
+  mkdir -p data/bgp
   url="$(bgpkit-broker latest -c "{{collector}}" --json \
     | jq -r '.[] | select(.data_type | contains("rib")) | .url' \
     | head -n 1)"
+  test -n "${url}" || { echo "No RIB URL for {{collector}}" >&2; exit 1; }
+  case "${url}" in
+    *.gz) suffix=.gz ;;
+    *.bz2) suffix=.bz2 ;;
+    *) echo "Unsupported RIB archive: ${url}" >&2; exit 1 ;;
+  esac
+  output="data/bgp/rib-{{collector}}${suffix}"
+  temporary="${output}.part"
+  rm -f "${temporary}"
+  curl --fail --location --retry 3 --continue-at - --output "${temporary}" "${url}"
+  test -s "${temporary}"
+  mv "${temporary}" "${output}"
+  printf '%s\n' "${url}" > "${output}.source"
 
-  if [[ -z "${url}" ]]; then
-    echo "Unable to determine {{collector}} RIB download url" >&2
-    exit 1
-  fi
-
-  if [[ "${url}" =~ (\.gz|\.bz2)$ ]]; then
-    suffix="${BASH_REMATCH[1]}"
-  else
-    echo "Unsupported archive format for {{collector}}: ${url}" >&2
-    exit 1
-  fi
-
-  outfile="rib-{{collector}}${suffix}"
-
-  rm -f "${outfile}"
-  aria2c -s 4 -x 4 -q -o "${outfile}" "${url}"
-  stat "${outfile}"
-  echo "INFO> ${outfile} ready for bgptools" >&2
-
-# Download the latest RIB snapshots (rrc21, rrc12, route-views6)
+# Download all configured BGP snapshots.
 [parallel]
-prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc21") (prepare_rib "rrc12") (prepare_rib "route-views6")
+prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc12") (prepare_rib "rrc21") (prepare_rib "route-views2") (prepare_rib "route-views6")
 
-# Prepare data for generation
+# Download one authoritative RIR WHOIS bulk snapshot.
+prepare_whois_file url:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p data/whois
+  url="{{url}}"
+  name="${url##*/}"
+  case "${url}" in
+    *apnic*) name="apnic-${name}" ;;
+    *ripe*) name="ripe-${name}" ;;
+    *arin*) name="arin-${name}" ;;
+    *lacnic*) name="lacnic-${name}" ;;
+    *afrinic*) name="afrinic-${name}" ;;
+  esac
+  output="data/whois/${name}"
+  temporary="${output}.part"
+  rm -f "${temporary}"
+  curl --fail --location --retry 3 --output "${temporary}" "{{url}}"
+  test -s "${temporary}"
+  gzip -t "${temporary}"
+  mv "${temporary}" "${output}"
+
+# Download APNIC, RIPE NCC, ARIN, LACNIC and AFRINIC WHOIS snapshots.
+prepare_whois:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  urls=( {{whois_urls}} )
+  pids=()
+  for url in "${urls[@]}"; do
+    just prepare_whois_file "${url}" &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "${pid}"
+  done
+
+# Prepare all authoritative inputs. Optional Geo CSV is not downloaded automatically.
 [parallel]
-prepare: prepare_autnums prepare_ribs prepare_ip2proxy
+prepare: prepare_ribs prepare_whois
 
-# Download the persisted IP2Proxy LITE PX7 BIN release asset
-prepare_ip2proxy:
-  #!/usr/bin/env bash
-  set -euo pipefail
-
-  repository="${GITHUB_REPOSITORY:-Suyunmeng/china-operator-ip}"
-  database="IP2PROXY-LITE-PX7.BIN"
-  rm -f "${database}"
-  gh release download ip2proxy-latest --repo "${repository}" --pattern "${database}" --output "${database}"
-  test -s "${database}"
-
-# Refresh and persist the IP2Proxy LITE PX7 BIN release asset
-update_ip2proxy:
-  #!/usr/bin/env bash
-  set -euo pipefail
-
-  : "${IP2LOCATION_DOWNLOAD_TOKEN:?IP2LOCATION_DOWNLOAD_TOKEN is required}"
-  repository="${GITHUB_REPOSITORY:-Suyunmeng/china-operator-ip}"
-  archive="IP2PROXY-LITE-PX7.BIN.ZIP"
-  database="IP2PROXY-LITE-PX7.BIN"
-  rm -f "${archive}" "${database}"
-  curl --fail --location --retry 3 --output "${archive}" \
-    "https://www.ip2location.com/download?token=${IP2LOCATION_DOWNLOAD_TOKEN}&file=PX7LITEBIN"
-  if ! unzip -tq "${archive}" >/dev/null 2>&1; then
-    echo "IP2Location did not return a valid ZIP archive:" >&2
-    cat "${archive}" >&2
-    exit 1
-  fi
-  member="$(unzip -Z1 "${archive}" | grep -Eim1 '\.bin$')"
-  test -n "${member}"
-  unzip -p "${archive}" "${member}" > "${database}"
-  rm -f "${archive}"
-  test -s "${database}"
-  if ! gh release view ip2proxy-latest --repo "${repository}" >/dev/null 2>&1; then
-    gh release create ip2proxy-latest --repo "${repository}" --title "IP2Proxy LITE PX7" --notes "Automated daily IP2Proxy LITE PX7 database."
-  fi
-  gh release upload ip2proxy-latest "${database}" --repo "${repository}" --clobber
-  gh release edit ip2proxy-latest --repo "${repository}" --draft=false
-
-# Print raw ASN candidates for OPERATOR based on operators.yaml
-get_asn_candidates_raw operator:
-  #!/usr/bin/env ruby
-  require "yaml"
-
-  cfg, asnames = "operators.yaml", "asnames.txt"
-  abort("Missing config: #{cfg}") unless File.file?(cfg)
-  abort("Missing asnames.txt. Run 'just prepare_autnums' first.") unless File.file?(asnames) && File.size?(asnames)
-
-  op = YAML.load_file(cfg).fetch("operators").fetch("{{operator}}")
-  country = op.fetch("country")
-  pattern_re = Regexp.new(op["pattern"].to_s, Regexp::IGNORECASE)
-  exclude_re = Regexp.new(op.fetch("exclude", "^$"), Regexp::IGNORECASE)
-
-  File.foreach(asnames) do |line|
-    line.chomp!
-    match = line.match(/^AS(\d+)\b.*,\s*([A-Z]{2})$/)
-    asn, line_country = match&.captures
-    next unless country.empty? || line_country == country
-    next unless pattern_re.match?(line)
-    next if exclude_re.match?(line)
-    puts asn
-  end
-
-# Print static ASN candidates for OPERATOR based on operators.yaml
-get_asn_candidates operator:
-  #!/usr/bin/env ruby
-  require "set"
-  require "yaml"
-
-  operator = "{{operator}}"
-  cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
-  exclude_asn = cfg.fetch("exclude_asn", []).map(&:to_s).to_set
-
-  candidate_asns = IO.popen(["just", "get_asn_candidates_raw", operator], &:read).split
-  abort("Failed to get raw ASN candidates for #{operator}") unless $?.success?
-
-  candidate_asns.each do |asn|
-    puts asn unless exclude_asn.include?(asn)
-  end
-
-# Print ASN list for OPERATOR based on operators.yaml
-get_asn operator:
-  #!/usr/bin/env ruby
-  require "yaml"
-
-  operator = "{{operator}}"
-  cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
-  candidate_asns = IO.popen(["just", "get_asn_candidates", operator], &:read).split
-  abort("Failed to get ASN candidates for #{operator}") unless $?.success?
-
-  candidate_asns.each do |asn|
-    puts asn
-  end
-
-# Fetch registered NetworksDB CIDRs for an operator, limited to its configured country
-networksdb_networks operator:
-  #!/usr/bin/env ruby
-  require "json"
-  require "net/http"
-  require "uri"
-  require "yaml"
-  require "ipaddr"
-
-  operator = "{{operator}}"
-  cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
-  abort("networksdb is disabled for #{operator}") unless cfg.fetch("networksdb", false)
-  country = cfg.fetch("country")
-  abort("country must be a two-letter country code for #{operator}") unless country.match?(/\A[A-Z]{2}\z/)
-  token = ENV.fetch("NETWORKSDB_TOKEN") { abort("NETWORKSDB_TOKEN is required for #{operator}") }
-  orgids = if cfg.key?("org_id_search")
-    org_id_search = cfg.fetch("org_id_search")
-    org_id_country = cfg.fetch("org_id_country", "")
-    abort("org_id_search must be a non-empty list for #{operator}") unless org_id_search.is_a?(Array) && !org_id_search.empty? && org_id_search.all? { |query| query.is_a?(String) && !query.empty? }
-    abort("org_id_country must be a two-letter country code for #{operator}") unless org_id_country.empty? || org_id_country.match?(/\A[A-Z]{2}\z/)
-
-    org_id_search.flat_map do |query|
-      uri = URI("https://networksdb.io/api/org-search")
-      params = {search: query}
-      params[:country] = org_id_country unless org_id_country.empty?
-      uri.query = URI.encode_www_form(params)
-      request = Net::HTTP::Get.new(uri)
-      request["X-Api-Key"] = token
-      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
-      abort("NetworksDB organisation search failed for #{operator}: HTTP #{response.code}") unless response.is_a?(Net::HTTPSuccess)
-      JSON.parse(response.body).fetch("results").map { |organisation| organisation.fetch("id") }
-    end.uniq
-  else
-    orgids = Array(cfg.fetch("org_id"))
-    abort("org_id must contain at least one non-empty string for #{operator}") unless orgids.any? && orgids.all? { |orgid| orgid.is_a?(String) && !orgid.empty? }
-    orgids.uniq
-  end
-  abort("NetworksDB organisation search returned no org_id values for #{operator}") if orgids.empty?
-
-  def ip_address_for_integer(value, bits)
-    if bits == 32
-      IPAddr.new_ntoh([value].pack("N"))
-    else
-      IPAddr.new_ntoh([value >> 64, value & ((1 << 64) - 1)].pack("Q>Q>"))
-    end
-  end
-
-  def cidrs_for_range(first_ip, last_ip)
-    first = IPAddr.new(first_ip)
-    last = IPAddr.new(last_ip)
-    raise ArgumentError unless first.ipv4? == last.ipv4? && first.to_i <= last.to_i
-
-    bits = first.ipv4? ? 32 : 128
-    start = first.to_i
-    finish = last.to_i
-    cidrs = []
-    while start <= finish
-      aligned_size = start.zero? ? 1 << bits : start & -start
-      remaining_size = 1 << ((finish - start + 1).bit_length - 1)
-      block_size = [aligned_size, remaining_size].min
-      prefix_length = bits - block_size.bit_length + 1
-      cidrs << "#{ip_address_for_integer(start, bits)}/#{prefix_length}"
-      start += block_size
-    end
-    cidrs
-  end
-
-  orgids.each do |orgid|
-    [false, true].each do |ipv6|
-      page = 1
-      loop do
-        uri = URI("https://networksdb.io/api/org-networks")
-        params = {id: orgid, page: page}
-        params[:ipv6] = "true" if ipv6
-        uri.query = URI.encode_www_form(params)
-        request = Net::HTTP::Get.new(uri)
-        request["X-Api-Key"] = token
-        response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
-        abort("NetworksDB request failed for #{operator}: HTTP #{response.code}") unless response.is_a?(Net::HTTPSuccess)
-        body = JSON.parse(response.body)
-        results = body.fetch("results")
-        results.each do |network|
-          cidr = network["cidr"]
-          next unless network.fetch("countrycode").casecmp?(country)
-          begin
-            if cidr == "N/A"
-              cidrs_for_range(network.fetch("first_ip"), network.fetch("last_ip")).each { |range_cidr| puts range_cidr }
-            else
-              raise ArgumentError unless cidr.is_a?(String) && cidr.match?(%r{\A[^/\s]+/\d+\z})
-              IPAddr.new(cidr)
-              puts cidr
-            end
-          rescue KeyError, ArgumentError
-            warn "WARN> skipping invalid NetworksDB network for #{operator} org_id=#{orgid}: cidr=#{cidr.inspect} first_ip=#{network["first_ip"].inspect} last_ip=#{network["last_ip"].inspect}"
-          end
-        end
-        break if results.empty? || page * 1000 >= body.fetch("total")
-        page += 1
-      end
-    end
-  end
-
-# Save country-filtered NetworksDB CIDRs to a hidden file under result/
-save_networksdb_networks operator:
-  #!/usr/bin/env bash
-  set -euo pipefail
-  mkdir -p result
-  just networksdb_networks "{{operator}}" > "result/.{{operator}}.networksdb.txt"
-
-# Generate IP lists for a single operator
-gen operator:
-  #!/usr/bin/env ruby
-  require "fileutils"
-  require "yaml"
-
-  operator = "{{operator}}"
-  FileUtils.mkdir_p("result")
-  out, v4, v6 = %W[result/#{operator}46.txt result/#{operator}.txt result/#{operator}6.txt]
-  raw_out = "result/.#{operator}.raw.txt"
-  cfg = YAML.load_file("operators.yaml").fetch("operators").fetch(operator)
-  origin_only = cfg.fetch("origin_only", false)
-  ip_country = cfg.fetch("ip_country", "")
-  ip_filter_enabled = !ip_country.empty?
-  abort("ip_country must be a two-letter country code for #{operator}") unless ip_country.empty? || ip_country.match?(/\A[A-Z]{2}\z/)
-
-  ribs = Dir["rib-*.{gz,bz2}"].sort
-  abort("No rib-*.gz or rib-*.bz2 files found. Run 'just prepare_ribs' first.") if ribs.empty?
-  bgptools = ["bgptools", "--ignore-private-asn", "--cache"]
-  bgptools << "--origin-only" if origin_only
-  bgptools += ribs.flat_map { |r| ["--mrt-file", r] }
-  if cfg.key?("trusted_cn_transit_asn")
-    trusted_cn_transit_asn = cfg.fetch("trusted_cn_transit_asn")
-    abort("trusted_cn_transit_asn must be a non-empty list for #{operator}") unless trusted_cn_transit_asn.is_a?(Array) && !trusted_cn_transit_asn.empty? && trusted_cn_transit_asn.all? { |asn| asn.to_s.match?(/\A\d+\z/) }
-    trusted_transit_file = ".#{operator}.trusted-cn-transit.txt"
-    File.write(trusted_transit_file, trusted_cn_transit_asn.map(&:to_s).uniq.join("\n") + "\n")
-    bgptools += ["--trusted-cn-transit-file", trusted_transit_file, "--asn-country-file", "asnames.txt"]
-  end
-
-  warn "INFO> #{operator} start"
-  if cfg.fetch("networksdb", false)
-    country = cfg.fetch("country")
-    abort("country must be a two-letter country code for #{operator}") unless country.match?(/\A[A-Z]{2}\z/)
-    if cfg.key?("org_id_search")
-      org_id_search = cfg.fetch("org_id_search")
-      org_id_country = cfg.fetch("org_id_country", "")
-      abort("org_id_search must be a non-empty list for #{operator}") unless org_id_search.is_a?(Array) && !org_id_search.empty? && org_id_search.all? { |query| query.is_a?(String) && !query.empty? }
-      abort("org_id_country must be a two-letter country code for #{operator}") unless org_id_country.empty? || org_id_country.match?(/\A[A-Z]{2}\z/)
-    else
-      orgids = Array(cfg.fetch("org_id"))
-      abort("org_id must contain at least one non-empty string for #{operator}") unless orgids.any? && orgids.all? { |orgid| orgid.is_a?(String) && !orgid.empty? }
-    end
-    abort("Failed to save NetworksDB networks for #{operator}") unless system("just", "save_networksdb_networks", operator)
-    network_file = "result/.#{operator}.networksdb.txt"
-    filter = ["target/release/networksdb-filter", "--network-file", network_file]
-    filter += cfg.fetch("exclude_asn", []).map { |asn| ["--exclude-asn", asn.to_s] }.flatten
-    filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
-    abort("Failed to filter NetworksDB networks against BGP data for #{operator}") unless system(*filter, out: raw_out)
-  elsif cfg.fetch("downstream_asn", []).any?
-    filter = ["target/release/downstream-filter"]
-    filter += cfg.fetch("downstream_asn").flat_map { |asn| ["--root-asn", asn.to_s] }
-    filter += cfg.fetch("exclude_asn", []).flat_map { |asn| ["--exclude-asn", asn.to_s] }
-    filter += ribs.flat_map { |rib| ["--mrt-file", rib] }
-    abort("Failed to collect downstream ASN networks for #{operator}") unless system(*filter, out: raw_out)
-  else
-    asns = IO.popen(["just", "get_asn", operator], &:read)
-    abort("Failed to get ASN list for #{operator}") unless $?.success?
-    abort("Failed to run bgptools for #{operator}") unless system(*bgptools, *asns.split, out: raw_out)
-  end
-
-  if ip_filter_enabled
-    filter = ["python3", "scripts/filter_ip2proxy.py", "--database", "IP2PROXY-LITE-PX7.BIN", "--network-file", raw_out]
-    filter += ["--country", ip_country]
-    abort("Failed to filter #{operator} networks with IP2Proxy") unless system(*filter, out: out)
-  else
-    FileUtils.mv(raw_out, out, force: true)
-  end
-
-  v6_lines, v4_lines = File.readlines(out).partition { |line| line.include?(":") }
-  File.write(v4, v4_lines.join)
-  File.write(v6, v6_lines.join)
-  warn "INFO> #{operator} done (v4=#{v4_lines.length} v6=#{v6_lines.length})"
-
-# Generate IP lists for all operators sequentially
-all:
-  #!/usr/bin/env ruby
-  require "yaml"
-
-  ops = YAML.load_file("operators.yaml").fetch("operators").keys.sort
-  ops.each do |op|
-    status = system("just", "gen", op)
-    exit($?.exitstatus || 1) unless status
-  end
-
-guard:
-  #!/usr/bin/env ruby
-  {"china.txt" => 3000, "china6.txt" => 1000}.each do |f, min|
-    next if File.foreach("result/#{f}").count >= min
-    warn "#{f} too small"
-    exit 1
-  end
-  warn "INFO> guard checks passed"
-
-# Summarize total IPv4/IPv6 address space per operator
-stat:
-  #!/usr/bin/env ruby
-  require "yaml"
-
-  dir = "result"
-  files = Dir.exist?(dir) ? Dir.glob("#{dir}/*.txt").sort : []
-  files.reject! { |p| p.end_with?("46.txt") }
-  abort("result/*.txt files missing") if files.empty?
-
-  report = files.map do |p|
-    base = p.end_with?("6.txt") ? 48 : 32
-    total = File.foreach(p).sum do |line|
-      match = %r{/(\d+)}.match(line)
-      next 0 unless match
-      prefix_len = match[1].to_i
-      prefix_len <= base ? (1 << (base - prefix_len)) : 0
-    end
-    "#{File.basename(p, ".txt")}\n#{total}"
-  end.join("\n\n") + "\n"
-
-  print report
-  File.write("#{dir}/stat", report)
-
-# Publish generated results into the ip-lists branch
-upload: guard
+# Run the BGP-first asset classification pipeline.
+generate: dependency prepare
   #!/usr/bin/env bash
   set -euo pipefail
   shopt -s nullglob
-  files=(result/*.txt result/.*.txt)
-  ((${#files[@]})) || { echo "No result files to upload" >&2; exit 1; }
-  mv "${files[@]}" ip-lists
+  ribs=(data/bgp/rib-*.gz data/bgp/rib-*.bz2)
+  whois=(data/whois/*.gz)
+  ((${#ribs[@]} > 0)) || { echo "No BGP RIB files" >&2; exit 1; }
+  ((${#whois[@]} > 0)) || { echo "No RIR WHOIS files" >&2; exit 1; }
+  args=(--rules operators.yaml --output result)
+  for file in "${ribs[@]}"; do args+=(--mrt-file "${file}"); done
+  for file in "${whois[@]}"; do args+=(--whois-file "${file}"); done
+  if [[ -n "${GEO_FILE:-}" ]]; then
+    args+=(--geo-file "${GEO_FILE}")
+  fi
+  target/release/china-asset-pipeline "${args[@]}"
+
+# Verify outputs and the invariant that every emitted CIDR is an exact observed BGP prefix.
+guard:
+  #!/usr/bin/env python3
+  import ipaddress
+  import json
+  from pathlib import Path
+
+  result = Path("result")
+  required = [
+      "china.txt", "china6.txt", "china46.txt",
+      "chinanet.txt", "chinanet6.txt", "chinanet46.txt",
+      "telecom.txt", "cmcc.txt", "unicom.txt", "cernet.txt", "cstnet.txt",
+      "prefix-owner.jsonl", "prefix-asn.jsonl", "prefix-path.jsonl",
+      "asn-family.json", "manifest.json",
+  ]
+  missing = [name for name in required if not (result / name).is_file()]
+  if missing:
+      raise SystemExit(f"missing outputs: {', '.join(missing)}")
+
+  announced = set()
+  metadata = {}
+  with (result / "prefix-owner.jsonl").open(encoding="utf-8") as stream:
+      for line_number, line in enumerate(stream, 1):
+          row = json.loads(line)
+          prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
+          if prefix in metadata:
+              raise SystemExit(f"duplicate metadata prefix: {prefix}")
+          if row["ip_version"] != ipaddress.ip_network(prefix).version:
+              raise SystemExit(f"wrong ip_version at line {line_number}: {prefix}")
+          if not row.get("origin_asn"):
+              raise SystemExit(f"missing origin ASN: {prefix}")
+          if not row.get("whois_org") and not row.get("netname"):
+              raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
+          metadata[prefix] = row
+          announced.add(prefix)
+  if not metadata:
+      raise SystemExit("prefix-owner.jsonl is empty")
+
+  for path in result.glob("*.txt"):
+      if path.name.startswith('.'):
+          continue
+      for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+          prefix = str(ipaddress.ip_network(line, strict=True))
+          if prefix not in announced:
+              raise SystemExit(f"{path}:{line_number}: not present in BGP metadata: {prefix}")
+  print(f"guard passed: {len(metadata)} classified BGP prefixes")
+
+# Summarize prefix counts and IPv4/IPv6 address space by list.
+stat:
+  #!/usr/bin/env python3
+  import ipaddress
+  from pathlib import Path
+
+  result = Path("result")
+  lines = []
+  for path in sorted(result.glob("*.txt")):
+      if path.name.endswith("46.txt") or path.name.startswith('.'):
+          continue
+      networks = [ipaddress.ip_network(line) for line in path.read_text().splitlines() if line]
+      lines.extend((path.stem, f"prefixes={len(networks)} addresses={sum(item.num_addresses for item in networks)}", ""))
+  report = "\n".join(lines)
+  print(report)
+  (result / "stat").write_text(report + "\n", encoding="utf-8")
+
+# Run deterministic local validation without downloading daily data.
+check:
+  cargo fmt --all -- --check
+  cargo clippy --all-targets --all-features -- -D warnings
+  cargo test --all-targets
+
+# Publish a complete staged result only after validation succeeds.
+upload: guard stat
+  #!/usr/bin/env bash
+  set -euo pipefail
+  test -d ip-lists/.git || { echo "ip-lists worktree is missing" >&2; exit 1; }
+  staging="$(mktemp -d)"
+  trap 'rm -rf "${staging}"' EXIT
+  cp -a result/. "${staging}/"
   cd ip-lists
-  tree -H . -P "*.txt|stat" -T "China Operator IP - prebuild results" > index.html
+  find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+  cp -a "${staging}/." .
+  tree -H . -P "*.txt|*.json|*.jsonl|stat" -T "China Network Asset Database" > index.html
   git config user.name "GitHub Actions"
   git config user.email noreply@github.com
-  git add .
-  git commit -m "update $(date +%Y-%m-%d)"
-  git push -q
+  git add --all
+  if git diff --cached --quiet; then
+    echo "No generated changes"
+    exit 0
+  fi
+  git commit -m "update $(date -u +%Y-%m-%d)"
+  git push --atomic origin HEAD:ip-lists
 
-# Refresh CDN cache for all files in ip-lists directory
+# Refresh jsDelivr cache after a successful publish.
 refresh_jsdelivr repository:
   #!/usr/bin/env ruby
   require "net/http"
-
-  dir = "ip-lists"
-  abort("#{dir} directory not found") unless Dir.exist?(dir)
-
-  Dir.children(dir).sort.each do |file|
+  Dir.children("ip-lists").sort.each do |file|
     warn "INFO> purging CDN cache for #{file}"
-    puts Net::HTTP.get_response(URI("https://purge.jsdelivr.net/gh/{{repository}}@#{dir}/#{file}")).inspect
+    puts Net::HTTP.get_response(URI("https://purge.jsdelivr.net/gh/{{repository}}@ip-lists/#{file}")).inspect
   end
