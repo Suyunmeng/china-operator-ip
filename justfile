@@ -220,6 +220,34 @@ networksdb_networks operator:
   end
   abort("NetworksDB organisation search returned no org_id values for #{operator}") if orgids.empty?
 
+  def ip_address_for_integer(value, bits)
+    if bits == 32
+      IPAddr.new_ntoh([value].pack("N"))
+    else
+      IPAddr.new_ntoh([value >> 64, value & ((1 << 64) - 1)].pack("Q>Q>"))
+    end
+  end
+
+  def cidrs_for_range(first_ip, last_ip)
+    first = IPAddr.new(first_ip)
+    last = IPAddr.new(last_ip)
+    raise ArgumentError unless first.ipv4? == last.ipv4? && first.to_i <= last.to_i
+
+    bits = first.ipv4? ? 32 : 128
+    start = first.to_i
+    finish = last.to_i
+    cidrs = []
+    while start <= finish
+      aligned_size = start.zero? ? 1 << bits : start & -start
+      remaining_size = 1 << ((finish - start + 1).bit_length - 1)
+      block_size = [aligned_size, remaining_size].min
+      prefix_length = bits - block_size.bit_length + 1
+      cidrs << "#{ip_address_for_integer(start, bits)}/#{prefix_length}"
+      start += block_size
+    end
+    cidrs
+  end
+
   orgids.each do |orgid|
     [false, true].each do |ipv6|
       page = 1
@@ -238,11 +266,15 @@ networksdb_networks operator:
           cidr = network["cidr"]
           next unless network.fetch("countrycode").casecmp?(country)
           begin
-            raise ArgumentError unless cidr.is_a?(String) && cidr.match?(%r{\A[^/\s]+/\d+\z})
-            IPAddr.new(cidr)
-            puts cidr
-          rescue ArgumentError
-            warn "WARN> skipping invalid NetworksDB CIDR for #{operator} org_id=#{orgid}: #{cidr.inspect}"
+            if cidr == "N/A"
+              cidrs_for_range(network.fetch("first_ip"), network.fetch("last_ip")).each { |range_cidr| puts range_cidr }
+            else
+              raise ArgumentError unless cidr.is_a?(String) && cidr.match?(%r{\A[^/\s]+/\d+\z})
+              IPAddr.new(cidr)
+              puts cidr
+            end
+          rescue KeyError, ArgumentError
+            warn "WARN> skipping invalid NetworksDB network for #{operator} org_id=#{orgid}: cidr=#{cidr.inspect} first_ip=#{network["first_ip"].inspect} last_ip=#{network["last_ip"].inspect}"
           end
         end
         break if results.empty? || page * 1000 >= body.fetch("total")
