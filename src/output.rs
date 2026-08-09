@@ -47,14 +47,9 @@ pub fn write_all(
             }
         }
     }
-    for (asset, rule) in &config.assets {
-        let basenames = if rule.outputs.is_empty() {
-            vec![asset.clone()]
-        } else {
-            rule.outputs.clone()
-        };
-        for basename in basenames {
-            lists.entry(basename).or_default();
+    for rule in config.assets.values() {
+        for basename in &rule.outputs {
+            lists.entry(basename.clone()).or_default();
         }
     }
     lists.entry("china".to_string()).or_default();

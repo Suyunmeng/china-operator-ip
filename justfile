@@ -159,7 +159,7 @@ guard:
   }
   expected_outputs = {}
   for asset, rule in config["assets"].items():
-      basenames = rule.get("outputs") or [asset]
+      basenames = rule.get("outputs", [])
       prefixes = {
           prefix for prefix, row in metadata.items() if row["asset"] == asset
       }

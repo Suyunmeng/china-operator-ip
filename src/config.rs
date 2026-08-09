@@ -265,11 +265,7 @@ fn validate_output_names(
     }
     let mut output_families: BTreeMap<String, String> = BTreeMap::new();
     for (asset, rule) in assets {
-        let basenames: Vec<_> = if rule.outputs.is_empty() {
-            vec![asset.as_str()]
-        } else {
-            rule.outputs.iter().map(String::as_str).collect()
-        };
+        let basenames: Vec<_> = rule.outputs.iter().map(String::as_str).collect();
         let mut seen = BTreeMap::new();
         for basename in basenames {
             if seen.insert(basename, ()).is_some() {
