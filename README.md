@@ -28,6 +28,8 @@
 特别地：
 
 - AS4134、AS4809、AS9808、AS4837 等出现在 AS Path 中间位置时只是 Transit ASN，**不会**使 Prefix 自动归属于对应运营商。
+- Cloudflare 是唯一的路由特例：查询不限制 WHOIS 地区，也不限制 Organisation/Org ID/Maintainer/NetName；直接 Origin AS13335 的已广播 Prefix 可以归入 Cloudflare，其他 Origin 只有在所有可用观测都表明其即时上游 ASN 集合**恰好等于 `{13335}`** 时才归入 Cloudflare。只要存在其他即时上游、缺失/不可解析路径，或者 AS13335 仅出现在更深层 AS Path，就不会通过该特例。
+- Cloudflare 路由归属仍然只处理已广播 Prefix，且路由归属和普通 WHOIS Owner 归属会在元数据中的 `match_source` 区分。其他资产继续受 Prefix WHOIS 必须为 `CN`、Geo 不得明确指向海外的门槛约束。
 - 所有列表原样保留观测到的 IPv4/IPv6 BGP Prefix，不从 RIR `/29`、`/32` 等分配块展开未广播的 `/48` 或 `/64`。
 - WHOIS Country 必须为 `CN`，且可选 Geo 辅助数据不能明确指向海外；否则 Prefix 不进入中国资产结果。
 - Geo 只提供 `country/subdivision/city` 位置和海外排除信号，不能确定 IP Owner。
@@ -71,7 +73,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 
 - `prefix-owner.jsonl`：每个已分类 Prefix 的资产、所有者、类型、WHOIS、规则、置信度和位置。
 - `prefix-asn.jsonl`：分类使用的代表性 Origin ASN、所有采集器实际观测到的 `observed_origin_asn`、自动推导的 ASN Family、Peer 和采集器。
-- `prefix-path.jsonl`：代表性 AS Path，并明确分离 Origin、Transit、Peer ASN。
+- `prefix-path.jsonl`：代表性 AS Path，并明确分离 Origin、Transit、Peer ASN；`observed_immediate_upstream_asn` 和 `immediate_upstream_evidence_complete` 记录即时上游特例所依据的完整观测证据。
 - `asn-family.json`：ASN Graph 自动发现结果、分数、深度和证据。
 - `manifest.json`：Schema 版本和输出清单。
 
@@ -88,6 +90,8 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
   "asset_type": "enterprise",
   "include_in_china": true,
   "operator_family": null,
+  "observed_immediate_upstream_asn": [64496],
+  "immediate_upstream_evidence_complete": true,
   "whois_org": "Example Network",
   "org_id": "ORG-EXAMPLE",
   "maintainer": ["MAINT-EXAMPLE"],
@@ -109,6 +113,8 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 - `type`、`owner`、`operator_family`、`priority`
 - `roots`：少量 ASN Family 根节点
 - `match.origin_asn`
+- `routing.direct_origin_asn`：按已观测 Origin ASN 匹配路由特例
+- `routing.exclusive_immediate_upstream_asn`：要求完整观测到的即时上游 ASN 集合与配置完全相等；不能单独使用，必须同时配置相同的 `direct_origin_asn`
 - `match.transit_asn`（只能作为 WHOIS Owner 规则的附加约束，禁止单独使用）
 - `match.whois_org`
 - `match.org_id`
@@ -120,7 +126,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 - 对称的 `exclude` 条件
 - `outputs`、`include_in_china`、`fallback`
 
-所有资产都必须保持 `require_domestic: true`（默认值）；显式设为 `false` 会被配置校验拒绝，避免海外 Prefix 进入中国资产结果。
+所有资产默认保持 `require_domestic: true`；Cloudflare 的路由特例可以显式设为 `require_domestic: false`，但必须是 routing-only 规则，不得混入 WHOIS/ASN Family/fallback 归属条件。
 
 文本字段是大小写不敏感正则。配置启用 `deny_unknown_fields`，拼错字段会导致生成失败，而不是被静默忽略。
 

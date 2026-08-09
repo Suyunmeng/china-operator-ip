@@ -63,6 +63,16 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
             .iter()
             .filter_map(|asn| families.get(asn).map(|family| family.family.clone()))
             .collect();
+        let upstream_evidence = observation
+            .origin_asns
+            .iter()
+            .filter_map(|asn| observation.upstream_evidence.get(asn))
+            .next();
+        let observed_immediate_upstream_asn: Vec<u32> = upstream_evidence
+            .map(|evidence| evidence.immediate_upstream_asns.iter().copied().collect())
+            .unwrap_or_default();
+        let immediate_upstream_evidence_complete =
+            upstream_evidence.is_some_and(|evidence| evidence.complete);
         classified.push((
             PrefixMetadata {
                 prefix: observation.prefix,
@@ -78,6 +88,8 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                 asset_type: classification.asset_type,
                 include_in_china,
                 operator_family: classification.operator_family,
+                observed_immediate_upstream_asn: observed_immediate_upstream_asn.clone(),
+                immediate_upstream_evidence_complete,
                 whois_org: owner_record.whois_org.clone(),
                 org_id: owner_record.org_id.clone(),
                 maintainer: owner_record.maintainers.clone(),
@@ -104,6 +116,8 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                 origin_asn: observation.origin_asns.iter().copied().collect(),
                 asn_path: observation.asn_path.clone(),
                 transit_asn: observation.transit_asns.iter().copied().collect(),
+                observed_immediate_upstream_asn,
+                immediate_upstream_evidence_complete,
                 peer_asn: observation.peer_asns.iter().copied().collect(),
                 collectors: observation.collectors.iter().cloned().collect(),
                 last_seen: observation.last_seen,

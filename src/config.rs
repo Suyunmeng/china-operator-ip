@@ -65,6 +65,8 @@ pub struct AssetRule {
     pub priority: i32,
     #[serde(default)]
     pub roots: Vec<u32>,
+    #[serde(default)]
+    pub routing: Option<RoutingConditions>,
     #[serde(default, rename = "match")]
     pub match_: MatchConditions,
     #[serde(default)]
@@ -112,6 +114,19 @@ impl AssetType {
             Self::Research => "research",
             Self::Other => "other",
         }
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RoutingConditions {
+    pub direct_origin_asn: Vec<u32>,
+    pub exclusive_immediate_upstream_asn: Vec<u32>,
+}
+
+impl RoutingConditions {
+    fn is_empty(&self) -> bool {
+        self.direct_origin_asn.is_empty() && self.exclusive_immediate_upstream_asn.is_empty()
     }
 }
 
@@ -200,9 +215,12 @@ impl Config {
 
         for (id, rule) in &mut self.assets {
             if !rule.require_domestic {
-                bail!(
-                    "asset {id} sets require_domestic: false, but this pipeline only classifies domestic assets"
-                );
+                if rule.routing.is_none() {
+                    bail!("asset {id} disables the domestic gate without routing conditions");
+                }
+                if !rule.match_.is_empty() || !rule.roots.is_empty() || rule.fallback {
+                    bail!("asset {id} disables the domestic gate but is not a routing-only rule");
+                }
             }
             if rule.owner.trim().is_empty() {
                 bail!("asset {id} has an empty owner");
@@ -216,9 +234,16 @@ impl Config {
             }) {
                 bail!("asset {id} contains an unsafe output basename");
             }
-            if rule.match_.is_empty() && !rule.fallback {
-                bail!("asset {id} has neither match conditions nor fallback: true");
+            if rule.match_.is_empty()
+                && rule
+                    .routing
+                    .as_ref()
+                    .is_none_or(RoutingConditions::is_empty)
+                && !rule.fallback
+            {
+                bail!("asset {id} has neither match/routing conditions nor fallback: true");
             }
+            validate_routing(id, rule)?;
             if !rule.match_.geo.is_empty() {
                 bail!(
                     "asset {id} uses match.geo, but Geo may only enrich metadata or exclude locations"
@@ -242,6 +267,48 @@ impl Config {
         validate_root_ownership(&self.assets)?;
         Ok(())
     }
+}
+
+fn validate_routing(id: &str, rule: &AssetRule) -> Result<()> {
+    let Some(routing) = &rule.routing else {
+        return Ok(());
+    };
+    if routing.is_empty() {
+        bail!("asset {id} contains an empty routing condition");
+    }
+    if rule.fallback {
+        bail!("fallback asset {id} cannot use routing conditions");
+    }
+    for (field, asns) in [
+        ("direct_origin_asn", &routing.direct_origin_asn),
+        (
+            "exclusive_immediate_upstream_asn",
+            &routing.exclusive_immediate_upstream_asn,
+        ),
+    ] {
+        if asns.contains(&0) {
+            bail!("asset {id} routing.{field} contains invalid AS0");
+        }
+        let unique: std::collections::BTreeSet<_> = asns.iter().collect();
+        if unique.len() != asns.len() {
+            bail!("asset {id} routing.{field} contains duplicate ASNs");
+        }
+    }
+    if !routing.exclusive_immediate_upstream_asn.is_empty() && routing.direct_origin_asn.is_empty()
+    {
+        bail!(
+            "asset {id} uses routing.exclusive_immediate_upstream_asn without routing.direct_origin_asn"
+        );
+    }
+    let direct: std::collections::BTreeSet<_> = routing.direct_origin_asn.iter().collect();
+    let upstreams: std::collections::BTreeSet<_> =
+        routing.exclusive_immediate_upstream_asn.iter().collect();
+    if !upstreams.is_empty() && direct != upstreams {
+        bail!(
+            "asset {id} routing direct origins and exclusive immediate upstreams must contain the same ASNs"
+        );
+    }
+    Ok(())
 }
 
 fn validate_output_names(
@@ -356,6 +423,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn routing_conditions_are_validated() {
+        let yaml = r#"
+version: 1
+assets:
+  cloudflare:
+    type: cdn
+    owner: Cloudflare
+    priority: 1
+    routing:
+      direct_origin_asn: [13335]
+      exclusive_immediate_upstream_asn: [13335]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
+    }
+
+    #[test]
+    fn routing_conditions_reject_conflicting_asn_sets() {
+        let yaml = r#"
+version: 1
+assets:
+  unsafe:
+    type: cdn
+    owner: Unsafe
+    priority: 1
+    routing:
+      direct_origin_asn: [13335]
+      exclusive_immediate_upstream_asn: [13335, 64500]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn empty_routing_is_rejected() {
+        let yaml = r#"
+version: 1
+assets:
+  unsafe:
+    type: cdn
+    owner: Unsafe
+    priority: 1
+    routing: {}
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+    #[test]
     fn transit_rules_require_whois_owner_evidence() {
         let yaml = r#"
 version: 1
@@ -386,6 +501,24 @@ assets:
 "#;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn routing_only_non_domestic_rule_is_allowed() {
+        let yaml = r#"
+version: 1
+assets:
+  cloudflare:
+    type: cdn
+    owner: Cloudflare
+    priority: 1
+    require_domestic: false
+    routing:
+      direct_origin_asn: [13335]
+      exclusive_immediate_upstream_asn: [13335]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
     }
 
     #[test]

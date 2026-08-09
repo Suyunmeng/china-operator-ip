@@ -22,6 +22,19 @@ pub fn classify(
     families: &BTreeMap<u32, FamilyMembership>,
     geo: Option<&GeoLocation>,
 ) -> Option<Classification> {
+    let mut routing_candidates = Vec::new();
+    for (asset, rule) in &config.assets {
+        if rule.require_domestic || matches_exclude(rule, observation, whois, asn_records, geo) {
+            continue;
+        }
+        if let Some(candidate) = routing_candidate(asset, rule, observation) {
+            routing_candidates.push(candidate);
+        }
+    }
+    if let Some(candidate) = select_candidate(routing_candidates) {
+        return Some(candidate.classification);
+    }
+
     if !is_domestic(config, whois, geo) {
         return None;
     }
@@ -48,18 +61,25 @@ pub fn classify(
         }
     }
 
-    candidates.sort_by(|left, right| {
-        right
-            .stage
-            .cmp(&left.stage)
-            .then_with(|| right.priority.cmp(&left.priority))
-            .then_with(|| right.specificity.cmp(&left.specificity))
-            .then_with(|| left.classification.asset.cmp(&right.classification.asset))
-    });
+    candidates.sort_by(candidate_order);
     candidates
         .into_iter()
         .next()
         .map(|candidate| candidate.classification)
+}
+
+fn select_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> {
+    candidates.sort_by(candidate_order);
+    candidates.into_iter().next()
+}
+
+fn candidate_order(left: &Candidate, right: &Candidate) -> std::cmp::Ordering {
+    right
+        .stage
+        .cmp(&left.stage)
+        .then_with(|| right.priority.cmp(&left.priority))
+        .then_with(|| right.specificity.cmp(&left.specificity))
+        .then_with(|| left.classification.asset.cmp(&right.classification.asset))
 }
 
 fn owner_candidate(
@@ -107,6 +127,62 @@ fn owner_candidate(
         priority: rule.priority,
         stage: 4,
         specificity: matched.len(),
+    })
+}
+
+fn routing_candidate(
+    asset: &str,
+    rule: &AssetRule,
+    observation: &BgpObservation,
+) -> Option<Candidate> {
+    let routing = rule.routing.as_ref()?;
+    if observation
+        .origin_asns
+        .iter()
+        .any(|origin| routing.direct_origin_asn.contains(origin))
+    {
+        return Some(Candidate {
+            classification: Classification {
+                asset: asset.to_string(),
+                owner: rule.owner.clone(),
+                asset_type: rule.asset_type.as_str().to_string(),
+                operator_family: rule.operator_family.clone(),
+                match_rule: format!("{asset}:routing-origin"),
+                match_source: "routing-origin-asn".to_string(),
+                confidence_score: 90,
+            },
+            priority: rule.priority,
+            stage: 3,
+            specificity: 2,
+        });
+    }
+    let evidence = observation
+        .origin_asns
+        .iter()
+        .filter_map(|origin| observation.upstream_evidence.get(origin))
+        .find(|evidence| evidence.complete)?;
+    if evidence.immediate_upstream_asns
+        != routing
+            .exclusive_immediate_upstream_asn
+            .iter()
+            .copied()
+            .collect()
+    {
+        return None;
+    }
+    Some(Candidate {
+        classification: Classification {
+            asset: asset.to_string(),
+            owner: rule.owner.clone(),
+            asset_type: rule.asset_type.as_str().to_string(),
+            operator_family: rule.operator_family.clone(),
+            match_rule: format!("{asset}:exclusive-immediate-upstream"),
+            match_source: "exclusive-immediate-upstream-asn".to_string(),
+            confidence_score: 86,
+        },
+        priority: rule.priority,
+        stage: 3,
+        specificity: evidence.immediate_upstream_asns.len(),
     })
 }
 
@@ -389,6 +465,15 @@ assets:
     priority: 300
     match:
       whois_org: ["SHIXP"]
+  cloudflare:
+    type: cdn
+    owner: Cloudflare
+    priority: 920
+    require_domestic: false
+    include_in_china: false
+    routing:
+      direct_origin_asn: [13335]
+      exclusive_immediate_upstream_asn: [13335]
 "#;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         config.validate_and_compile().unwrap();
@@ -404,10 +489,123 @@ assets:
             transit_asns: BTreeSet::from([64500]),
             peer_asns: BTreeSet::new(),
             collectors: BTreeSet::new(),
+            upstream_evidence: BTreeMap::new(),
             last_seen: 1,
         }
     }
 
+    fn routing_observation(origin: u32, upstreams: &[u32], complete: bool) -> BgpObservation {
+        let mut observation = observation();
+        observation.origin_asns = BTreeSet::from([origin]);
+        observation.observed_origin_asns = BTreeSet::from([origin]);
+        observation.asn_path = upstreams.iter().copied().chain([origin]).collect();
+        observation.transit_asns = upstreams.iter().copied().collect();
+        observation.upstream_evidence = BTreeMap::from([(
+            origin,
+            crate::model::OriginUpstreamEvidence {
+                immediate_upstream_asns: upstreams.iter().copied().collect(),
+                complete,
+            },
+        )]);
+        observation
+    }
+
+    #[test]
+    fn direct_cloudflare_origin_matches_routing_rule() {
+        let observation = routing_observation(13335, &[], true);
+        let whois = WhoisRecord {
+            country: Some("US".to_string()),
+            whois_org: Some("Unrelated registration holder".to_string()),
+            ..WhoisRecord::default()
+        };
+        let result = classify(
+            &config(),
+            &observation,
+            Some(&whois),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.asset, "cloudflare");
+        assert_eq!(result.match_source, "routing-origin-asn");
+    }
+
+    #[test]
+    fn cloudflare_downstream_requires_exclusive_immediate_upstream() {
+        let observation = routing_observation(65000, &[13335], true);
+        let whois = WhoisRecord {
+            country: Some("US".to_string()),
+            whois_org: Some("Unrelated registration holder".to_string()),
+            ..WhoisRecord::default()
+        };
+        let result = classify(
+            &config(),
+            &observation,
+            Some(&whois),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.asset, "cloudflare");
+        assert_eq!(result.match_source, "exclusive-immediate-upstream-asn");
+
+        let conflicting = routing_observation(65000, &[13335, 64500], true);
+        assert_eq!(
+            classify(
+                &config(),
+                &conflicting,
+                Some(&whois),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn cloudflare_incomplete_upstream_evidence_is_rejected() {
+        let observation = routing_observation(65000, &[13335], false);
+        let whois = WhoisRecord {
+            country: Some("US".to_string()),
+            whois_org: Some("Unrelated registration holder".to_string()),
+            ..WhoisRecord::default()
+        };
+        assert_eq!(
+            classify(
+                &config(),
+                &observation,
+                Some(&whois),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                None,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn cloudflare_transit_presence_is_not_enough() {
+        let observation = routing_observation(65000, &[64500, 13335], true);
+        let whois = WhoisRecord {
+            country: Some("US".to_string()),
+            whois_org: Some("Unrelated registration holder".to_string()),
+            ..WhoisRecord::default()
+        };
+        assert_eq!(
+            classify(
+                &config(),
+                &observation,
+                Some(&whois),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                None,
+            ),
+            None
+        );
+    }
     #[test]
     fn high_priority_whois_owner_overrides_carrier_origin() {
         let whois = WhoisRecord {

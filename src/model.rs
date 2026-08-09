@@ -1,7 +1,13 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OriginUpstreamEvidence {
+    pub immediate_upstream_asns: BTreeSet<u32>,
+    pub complete: bool,
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BgpObservation {
@@ -10,6 +16,7 @@ pub struct BgpObservation {
     pub observed_origin_asns: BTreeSet<u32>,
     pub asn_path: Vec<u32>,
     pub transit_asns: BTreeSet<u32>,
+    pub upstream_evidence: BTreeMap<u32, OriginUpstreamEvidence>,
     pub peer_asns: BTreeSet<u32>,
     pub collectors: BTreeSet<String>,
     pub last_seen: i64,
@@ -94,6 +101,8 @@ pub struct PrefixMetadata {
     pub asset_type: String,
     pub include_in_china: bool,
     pub operator_family: Option<String>,
+    pub observed_immediate_upstream_asn: Vec<u32>,
+    pub immediate_upstream_evidence_complete: bool,
     pub whois_org: Option<String>,
     pub org_id: Option<String>,
     pub maintainer: Vec<String>,
@@ -124,6 +133,8 @@ pub struct PrefixPathMetadata {
     pub origin_asn: Vec<u32>,
     pub asn_path: Vec<u32>,
     pub transit_asn: Vec<u32>,
+    pub observed_immediate_upstream_asn: Vec<u32>,
+    pub immediate_upstream_evidence_complete: bool,
     pub peer_asn: Vec<u32>,
     pub collectors: Vec<String>,
     pub last_seen: i64,

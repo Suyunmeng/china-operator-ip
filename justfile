@@ -141,6 +141,28 @@ guard:
           if not row.get("origin_asn"):
               raise SystemExit(f"missing origin ASN: {prefix}")
           if not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
+              if row.get("match_source") not in {"routing-origin-asn", "exclusive-immediate-upstream-asn"}:
+                  raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
+          upstreams = row.get("observed_immediate_upstream_asn")
+          if not isinstance(upstreams, list) or any(not isinstance(asn, int) or asn <= 0 for asn in upstreams):
+              raise SystemExit(f"invalid immediate upstream ASN evidence: {prefix}")
+          if upstreams != sorted(set(upstreams)):
+              raise SystemExit(f"unsorted or duplicate immediate upstream ASN evidence: {prefix}")
+          complete = row.get("immediate_upstream_evidence_complete")
+          if not isinstance(complete, bool):
+              raise SystemExit(f"missing immediate upstream evidence completeness: {prefix}")
+          rule = config["assets"].get(row["asset"], {})
+          routing = rule.get("routing", {}) or {}
+          source = row.get("match_source")
+          if source == "routing-origin-asn":
+              direct = set(routing.get("direct_origin_asn", []))
+              if not direct.intersection(row["origin_asn"]):
+                  raise SystemExit(f"routing origin provenance mismatch: {prefix}")
+          elif source == "exclusive-immediate-upstream-asn":
+              expected = sorted(set(routing.get("exclusive_immediate_upstream_asn", [])))
+              if not complete or upstreams != expected:
+                  raise SystemExit(f"exclusive upstream provenance mismatch: {prefix}")
+          elif not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
               raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
           metadata[prefix] = row
           announced.add(prefix)
@@ -151,6 +173,26 @@ guard:
                   china_v6.add(prefix)
   if not metadata:
       raise SystemExit(f"{owner_file} is empty")
+
+  path_metadata = {}
+  with (result / path_file).open(encoding="utf-8") as stream:
+      for line_number, line in enumerate(stream, 1):
+          row = json.loads(line)
+          prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
+          if prefix in path_metadata:
+              raise SystemExit(f"duplicate path metadata prefix: {prefix}")
+          if prefix not in metadata:
+              raise SystemExit(f"path metadata has unknown prefix: {prefix}")
+          upstreams = row.get("observed_immediate_upstream_asn")
+          if not isinstance(upstreams, list) or upstreams != sorted(set(upstreams)):
+              raise SystemExit(f"invalid path immediate upstream evidence: {prefix}")
+          if upstreams != metadata[prefix]["observed_immediate_upstream_asn"]:
+              raise SystemExit(f"owner/path upstream evidence mismatch: {prefix}")
+          if row.get("immediate_upstream_evidence_complete") != metadata[prefix]["immediate_upstream_evidence_complete"]:
+              raise SystemExit(f"owner/path evidence completeness mismatch: {prefix}")
+          path_metadata[prefix] = row
+  if set(path_metadata) != set(metadata):
+      raise SystemExit(f"{path_file} does not cover exactly the owner metadata prefixes")
 
   expected_china = {
       "china.txt": china_v4,

@@ -141,7 +141,7 @@ fn write_manifest(dir: &Path, classified: usize) -> Result<()> {
     write_json(
         &dir.join("manifest.json"),
         &serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "classified_prefixes": classified,
             "files": files,
         }),
@@ -188,6 +188,8 @@ assets:
                     asset_type: "ixp".to_string(),
                     include_in_china: true,
                     operator_family: None,
+                    observed_immediate_upstream_asn: Vec::new(),
+                    immediate_upstream_evidence_complete: false,
                     whois_org: Some(asset.to_string()),
                     org_id: None,
                     maintainer: Vec::new(),
@@ -214,6 +216,8 @@ assets:
                     origin_asn: vec![64500],
                     asn_path: vec![64500],
                     transit_asn: Vec::new(),
+                    observed_immediate_upstream_asn: Vec::new(),
+                    immediate_upstream_evidence_complete: false,
                     peer_asn: Vec::new(),
                     collectors: Vec::new(),
                     last_seen: 1,

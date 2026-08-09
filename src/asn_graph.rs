@@ -167,20 +167,15 @@ fn origin_side_adjacency(
 ) -> HashMap<u32, BTreeSet<u32>> {
     let mut adjacency: HashMap<u32, BTreeSet<u32>> = HashMap::new();
     for observation in observations.values() {
-        let Some(origin) = observation.asn_path.last().copied() else {
-            continue;
-        };
-        let Some(upstream) = observation
-            .asn_path
-            .iter()
-            .rev()
-            .copied()
-            .find(|asn| *asn != origin)
-        else {
-            continue;
-        };
-        adjacency.entry(origin).or_default().insert(upstream);
-        adjacency.entry(upstream).or_default().insert(origin);
+        for (origin, evidence) in &observation.upstream_evidence {
+            if !evidence.complete {
+                continue;
+            }
+            for upstream in &evidence.immediate_upstream_asns {
+                adjacency.entry(*origin).or_default().insert(*upstream);
+                adjacency.entry(*upstream).or_default().insert(*origin);
+            }
+        }
     }
     adjacency
 }
@@ -198,6 +193,30 @@ fn insert_best(memberships: &mut BTreeMap<u32, FamilyMembership>, candidate: Fam
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn incomplete_upstream_evidence_does_not_create_adjacency() {
+        let observation = BgpObservation {
+            prefix: "203.0.113.0/24".parse().unwrap(),
+            origin_asns: BTreeSet::from([65000]),
+            observed_origin_asns: BTreeSet::from([65000]),
+            asn_path: vec![64500, 65000],
+            transit_asns: BTreeSet::from([64500]),
+            upstream_evidence: BTreeMap::from([(
+                65000,
+                crate::model::OriginUpstreamEvidence {
+                    immediate_upstream_asns: BTreeSet::from([64500]),
+                    complete: false,
+                },
+            )]),
+            peer_asns: BTreeSet::new(),
+            collectors: BTreeSet::new(),
+            last_seen: 1,
+        };
+        assert!(
+            origin_side_adjacency(&BTreeMap::from([(observation.prefix, observation)])).is_empty()
+        );
+    }
 
     #[test]
     fn bgp_adjacency_alone_cannot_create_a_family_member() {

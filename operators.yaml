@@ -65,7 +65,7 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
-    outputs: [aliyuncn]
+    outputs: [aliyuncn, aliyun]
 
   tencentcn:
     type: cloud
@@ -83,7 +83,7 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
-    outputs: [tencentcn]
+    outputs: [tencentcn, tencent]
 
   volcanoenginecn:
     type: cloud
@@ -102,7 +102,7 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [volcanoenginecn]
+    outputs: [volcanoenginecn, volcanoengine]
 
   ucloudcn:
     type: cloud
@@ -121,7 +121,7 @@ assets:
     exclude:
       origin_asn: [135377]
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [ucloudcn]
+    outputs: [ucloudcn, ucloud]
 
   baiducn:
     type: cloud
@@ -140,24 +140,17 @@ assets:
       country: [CN]
     exclude:
       country: [HK, MO, TW, US, SG, JP]
-    outputs: [baiducn]
+    outputs: [baiducn, baidu]
 
   cloudflare:
     type: cdn
     owner: Cloudflare
     priority: 920
-    match:
-      whois_org:
-        - 'Cloudflare'
-      org_id:
-        - 'CLOUDFLARE'
-      maintainer:
-        - 'CLOUDFLARE'
-      netname:
-        - 'CLOUDFLARE'
-      country: [CN]
-    exclude:
-      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    require_domestic: false
+    include_in_china: false
+    routing:
+      direct_origin_asn: [13335]
+      exclusive_immediate_upstream_asn: [13335]
     outputs: [cloudflare]
 
   cernet:
@@ -231,7 +224,7 @@ assets:
       whois_org:
         - 'Alibaba|Aliyun|Tencent|UCloud|SHIXP|CNIXP|ByteDance|Volcano Engine'
       country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
-    outputs: [chinanet]
+    outputs: [chinanet, telecom]
 
   cmcc:
     type: carrier
