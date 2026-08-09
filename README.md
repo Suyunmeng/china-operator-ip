@@ -115,7 +115,9 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 - `match.geo`
 - `match.asn_org`
 - 对称的 `exclude` 条件
-- `outputs`、`include_in_china`、`require_domestic`、`fallback`
+- `outputs`、`include_in_china`、`fallback`
+
+所有资产都必须保持 `require_domestic: true`（默认值）；显式设为 `false` 会被配置校验拒绝，避免海外 Prefix 进入中国资产结果。
 
 文本字段是大小写不敏感正则。配置启用 `deny_unknown_fields`，拼错字段会导致生成失败，而不是被静默忽略。
 
@@ -140,12 +142,13 @@ assets:
 
 ## ASN Graph
 
-运营商规则只维护根节点，例如：
+ASN Family 规则只维护少量根节点，例如：
 
 - CHINANET：AS4134、AS4809
 - CMCC：AS9808
 - China Unicom：AS4837、AS9929
-- CERNET：AS4538、AS7497
+- CERNET：AS4538
+- CSTNET：AS7497
 
 自动发现候选 ASN 时，证据包括：
 

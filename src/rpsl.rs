@@ -264,11 +264,17 @@ fn summarize_v6(start: Ipv6Addr, end: Ipv6Addr) -> Vec<IpNet> {
         prefixes.push(IpNet::V6(
             Ipv6Net::new(Ipv6Addr::from(current), (128 - host_bits) as u8).unwrap(),
         ));
-        let block_size = 1u128 << host_bits;
-        if host_bits == 128 || current + block_size > end {
+        if host_bits == 128 {
             break;
         }
-        current += block_size;
+        let block_size = 1u128 << host_bits;
+        let Some(next) = current.checked_add(block_size) else {
+            break;
+        };
+        if next > end {
+            break;
+        }
+        current = next;
     }
     prefixes
 }
@@ -279,12 +285,10 @@ fn largest_host_bits(start: u128, end: u128, bits: u32) -> u32 {
     } else {
         start.trailing_zeros().min(bits)
     };
-    let count = end - start + 1;
-    let fitting = if count == 0 {
-        bits
-    } else {
-        count.ilog2().min(bits)
-    };
+    let count = end
+        .checked_sub(start)
+        .and_then(|value| value.checked_add(1));
+    let fitting = count.map_or(bits, |count| count.ilog2().min(bits));
     aligned.min(fitting).min(bits)
 }
 
@@ -506,6 +510,19 @@ mod tests {
                 .netname
                 .as_deref(),
             Some("PARENT")
+        );
+    }
+
+    #[test]
+    fn full_ipv6_range_summarizes_to_default_route() {
+        assert_eq!(
+            summarize_range(
+                "::".parse::<IpAddr>().unwrap(),
+                "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+                    .parse::<IpAddr>()
+                    .unwrap(),
+            ),
+            vec!["::/0".parse::<IpNet>().unwrap()]
         );
     }
 

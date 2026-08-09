@@ -188,17 +188,28 @@ impl Config {
             &metadata.path,
             &metadata.family,
         ] {
-            if path.is_empty() || path.contains('/') || path.contains('\\') || path.contains("..") {
+            if path.is_empty()
+                || path == "."
+                || path.contains('/')
+                || path.contains('\\')
+                || path.contains("..")
+            {
                 bail!("metadata output path {path:?} is not a safe basename");
             }
         }
 
         for (id, rule) in &mut self.assets {
+            if !rule.require_domestic {
+                bail!(
+                    "asset {id} sets require_domestic: false, but this pipeline only classifies domestic assets"
+                );
+            }
             if rule.owner.trim().is_empty() {
                 bail!("asset {id} has an empty owner");
             }
             if rule.outputs.iter().any(|output| {
                 output.is_empty()
+                    || output == "."
                     || output.contains('/')
                     || output.contains('\\')
                     || output.contains("..")
@@ -222,8 +233,65 @@ impl Config {
             rule.exclude.country = normalize_countries(&rule.exclude.country, id)?;
             rule.compiled = compile_rule(id, &rule.match_, &rule.exclude)?;
         }
+        validate_output_names(&self.assets, metadata)?;
+        validate_root_ownership(&self.assets)?;
         Ok(())
     }
+}
+
+fn validate_output_names(
+    assets: &BTreeMap<String, AssetRule>,
+    metadata: &MetadataFiles,
+) -> Result<()> {
+    let mut filenames = BTreeMap::new();
+    for (filename, owner) in [
+        (metadata.owner.as_str(), "metadata.owner"),
+        (metadata.asn.as_str(), "metadata.asn"),
+        (metadata.path.as_str(), "metadata.path"),
+        (metadata.family.as_str(), "metadata.family"),
+        ("manifest.json", "manifest"),
+        ("china.txt", "aggregate china IPv4"),
+        ("china6.txt", "aggregate china IPv6"),
+        ("china46.txt", "aggregate china dual-stack"),
+    ] {
+        if let Some(previous) = filenames.insert(filename.to_string(), owner.to_string()) {
+            bail!("{owner} collides with {previous} at generated file {filename}");
+        }
+    }
+    for (asset, rule) in assets {
+        let basenames: Vec<_> = if rule.outputs.is_empty() {
+            vec![asset.as_str()]
+        } else {
+            rule.outputs.iter().map(String::as_str).collect()
+        };
+        for basename in basenames {
+            for filename in [
+                format!("{basename}.txt"),
+                format!("{basename}6.txt"),
+                format!("{basename}46.txt"),
+            ] {
+                if let Some(previous) = filenames.insert(filename.clone(), format!("asset {asset}"))
+                {
+                    bail!(
+                        "asset {asset} output collides with {previous} at generated file {filename}"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_root_ownership(assets: &BTreeMap<String, AssetRule>) -> Result<()> {
+    let mut roots = BTreeMap::new();
+    for (asset, rule) in assets {
+        for root in &rule.roots {
+            if let Some(previous) = roots.insert(*root, asset) {
+                bail!("ASN family root AS{root} is shared by assets {previous} and {asset}");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn normalize_countries(values: &[String], id: &str) -> Result<Vec<String>> {
@@ -285,6 +353,71 @@ assets:
     priority: 1
     match:
       transit_asn: [4134]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn non_domestic_rules_are_rejected() {
+        let yaml = r#"
+version: 1
+assets:
+  overseas:
+    type: enterprise
+    owner: Overseas
+    priority: 1
+    require_domestic: false
+    match:
+      origin_asn: [64500]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn colliding_generated_output_names_are_rejected() {
+        let yaml = r#"
+version: 1
+assets:
+  first:
+    type: enterprise
+    owner: First
+    priority: 2
+    match:
+      origin_asn: [64500]
+    outputs: [example]
+  second:
+    type: enterprise
+    owner: Second
+    priority: 1
+    match:
+      origin_asn: [64501]
+    outputs: [example6]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn shared_family_roots_are_rejected() {
+        let yaml = r#"
+version: 1
+assets:
+  first:
+    type: education
+    owner: First
+    priority: 2
+    roots: [64500]
+    match:
+      origin_asn: [64500]
+  second:
+    type: research
+    owner: Second
+    priority: 1
+    roots: [64500]
+    match:
+      origin_asn: [64501]
 "#;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         assert!(config.validate_and_compile().is_err());

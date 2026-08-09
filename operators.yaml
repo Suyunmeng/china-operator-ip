@@ -147,7 +147,7 @@ assets:
     owner: China Education and Research Network
     operator_family: cernet
     priority: 500
-    roots: [4538, 7497]
+    roots: [4538]
     match:
       origin_asn: [4538, 7497]
       whois_org:

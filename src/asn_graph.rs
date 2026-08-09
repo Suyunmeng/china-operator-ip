@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde::Serialize;
 
 use crate::{
-    config::{AssetType, Config},
+    config::Config,
     model::{AsnRecord, BgpObservation},
 };
 
@@ -29,19 +29,19 @@ pub fn infer_families(
     let adjacency = origin_side_adjacency(observations);
     let mut memberships: BTreeMap<u32, FamilyMembership> = BTreeMap::new();
 
-    let mut carrier_rules: Vec<_> = config
+    let mut family_rules: Vec<_> = config
         .assets
         .iter()
-        .filter(|(_, rule)| rule.asset_type == AssetType::Carrier && !rule.roots.is_empty())
+        .filter(|(_, rule)| !rule.roots.is_empty())
         .collect();
-    carrier_rules.sort_by(|(left_id, left), (right_id, right)| {
+    family_rules.sort_by(|(left_id, left), (right_id, right)| {
         right
             .priority
             .cmp(&left.priority)
             .then_with(|| left_id.cmp(right_id))
     });
 
-    for (asset, rule) in carrier_rules {
+    for (asset, rule) in family_rules {
         let family = rule
             .operator_family
             .clone()

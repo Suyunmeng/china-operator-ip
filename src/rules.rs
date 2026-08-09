@@ -35,9 +35,6 @@ pub fn classify(
             candidates.push(candidate);
             continue;
         }
-        if rule.require_domestic && !is_domestic(config, whois, geo) {
-            continue;
-        }
         if let Some(candidate) =
             family_candidate(asset, rule, observation, whois, asn_records, families)
         {

@@ -119,6 +119,8 @@ guard:
       raise SystemExit(f"missing outputs: {', '.join(missing)}")
 
   announced = set()
+  announced_v4 = set()
+  announced_v6 = set()
   metadata = {}
   with (result / "prefix-owner.jsonl").open(encoding="utf-8") as stream:
       for line_number, line in enumerate(stream, 1):
@@ -134,8 +136,29 @@ guard:
               raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
           metadata[prefix] = row
           announced.add(prefix)
+          if row["ip_version"] == 4:
+              announced_v4.add(prefix)
+          else:
+              announced_v6.add(prefix)
   if not metadata:
       raise SystemExit("prefix-owner.jsonl is empty")
+
+  expected_china = {
+      "china.txt": announced_v4,
+      "china6.txt": announced_v6,
+      "china46.txt": announced,
+  }
+  for name, expected in expected_china.items():
+      actual = {
+          str(ipaddress.ip_network(line, strict=True))
+          for line in (result / name).read_text(encoding="utf-8").splitlines()
+          if line
+      }
+      if actual != expected:
+          raise SystemExit(
+              f"{name} differs from classified metadata: "
+              f"missing={len(expected - actual)} extra={len(actual - expected)}"
+          )
 
   for path in result.glob("*.txt"):
       if path.name.startswith('.'):
