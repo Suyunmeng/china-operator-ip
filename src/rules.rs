@@ -524,7 +524,7 @@ assets:
     }
 
     #[test]
-    fn geo_rule_cannot_classify_without_owner_or_origin_evidence() {
+    fn geo_only_rules_are_rejected_during_validation() {
         let yaml = r#"
 version: 1
 assets:
@@ -536,28 +536,7 @@ assets:
       geo: ["Beijing"]
 "#;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
-        config.validate_and_compile().unwrap();
-        let whois = WhoisRecord {
-            country: Some("CN".to_string()),
-            whois_org: Some("Unrelated Enterprise".to_string()),
-            ..WhoisRecord::default()
-        };
-        let geo = GeoLocation {
-            country: Some("CN".to_string()),
-            subdivision: Some("Beijing".to_string()),
-            city: None,
-        };
-        assert_eq!(
-            classify(
-                &config,
-                &observation(),
-                Some(&whois),
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-                Some(&geo),
-            ),
-            None
-        );
+        assert!(config.validate_and_compile().is_err());
     }
 
     #[test]
