@@ -15,26 +15,19 @@ jobs:
     runs-on: ubuntu-latest
     name: Publish static ip-lists site
     steps:
+      - name: Checkout page generator
+        uses: actions/checkout@v6
+        with:
+          path: generator
+
       - name: Checkout ip-lists
         uses: actions/checkout@v6
         with:
           ref: ip-lists
-
-      - name: Install tree
-        run: sudo apt-get update && sudo apt-get install --yes tree
+          path: ip-lists
 
       - name: Prepare Pages site
-        run: |
-          mkdir site
-          find . -maxdepth 1 -type f \
-            ! -name 'prefix-asn.jsonl' \
-            ! -name 'prefix-owner.jsonl' \
-            ! -name 'prefix-path.jsonl' \
-            -exec cp -- {} site/ \;
-
-      - name: Generate directory index
-        working-directory: site
-        run: tree -H . -P "*.txt|*.json|stat" --ignore-case --noreport -T "China Operator IP - prebuild results" -o index.html .
+        run: python generator/scripts/generate_pages_index.py ip-lists site
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
