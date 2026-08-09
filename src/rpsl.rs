@@ -146,8 +146,17 @@ fn for_each_object(path: &Path, mut callback: impl FnMut(&Object) -> Result<()>)
     let mut object = Object::new();
     let mut last_key: Option<String> = None;
 
-    for line in BufReader::new(reader).lines() {
-        let line = line.with_context(|| format!("failed reading {}", path.display()))?;
+    let mut reader = BufReader::new(reader);
+    let mut buffer = Vec::new();
+    loop {
+        buffer.clear();
+        let bytes_read = reader
+            .read_until(b'\n', &mut buffer)
+            .with_context(|| format!("failed reading {}", path.display()))?;
+        if bytes_read == 0 {
+            break;
+        }
+        let line = String::from_utf8_lossy(&buffer);
         let line = line.trim_end();
         if line.is_empty() {
             if !object.is_empty() {
@@ -524,6 +533,22 @@ mod tests {
             ),
             vec!["::/0".parse::<IpNet>().unwrap()]
         );
+    }
+
+    #[test]
+    fn non_utf8_whois_text_is_decoded_lossily() {
+        let mut file = tempfile::Builder::new()
+            .suffix("-lacnic.db")
+            .tempfile()
+            .unwrap();
+        file.write_all(
+            b"inetnum: 200.0.0.0 - 200.0.0.255\nowner: Example \xff Network\ncountry: CN\n\n",
+        )
+        .unwrap();
+        let index = WhoisIndex::load(&[file.path().to_path_buf()]).unwrap();
+        let record = index.lookup("200.0.0.0/24".parse().unwrap()).unwrap();
+        assert_eq!(record.country.as_deref(), Some("CN"));
+        assert!(record.whois_org.as_deref().unwrap().contains("Example"));
     }
 
     #[test]
