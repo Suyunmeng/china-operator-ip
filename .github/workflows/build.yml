@@ -84,4 +84,5 @@ jobs:
         working-directory: source
         run: just refresh_jsdelivr "${{ github.repository }}"
       - name: Publish updated ip-lists
+        working-directory: source
         run: gh workflow run publish-ip-lists-pages.yml --ref master
