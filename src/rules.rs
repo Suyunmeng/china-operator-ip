@@ -204,11 +204,10 @@ fn whois_conflicts_with_rule(rule: &AssetRule, whois: Option<&WhoisRecord>) -> b
     if owner_matches {
         return false;
     }
-    let owner_present = whois.whois_org.is_some()
+    whois.whois_org.is_some()
         || whois.org_id.is_some()
         || whois.netname.is_some()
-        || !whois.maintainers.is_empty();
-    owner_present
+        || !whois.maintainers.is_empty()
 }
 
 fn fallback_candidate(
