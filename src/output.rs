@@ -39,7 +39,7 @@ pub fn write_all(
                     .or_default()
                     .insert(owner.prefix);
             }
-            if owner.include_in_china {
+            if owner.include_in_china && owner.announced {
                 lists
                     .entry("china".to_string())
                     .or_default()
@@ -141,7 +141,7 @@ fn write_manifest(dir: &Path, classified: usize) -> Result<()> {
     write_json(
         &dir.join("manifest.json"),
         &serde_json::json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "classified_prefixes": classified,
             "files": files,
         }),
@@ -152,6 +152,84 @@ fn write_manifest(dir: &Path, classified: usize) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn whois_only_prefix_stays_out_of_china_aggregate() {
+        let mut config: Config = serde_yaml::from_str(
+            r#"
+version: 1
+assets:
+  cloud:
+    type: cloud
+    owner: Cloud
+    priority: 1
+    require_announced: false
+    match:
+      whois_org: [Cloud]
+      country: [CN]
+    outputs: [cloud]
+"#,
+        )
+        .unwrap();
+        config.validate_and_compile().unwrap();
+        let prefix = "198.51.100.0/24";
+        let owner = PrefixMetadata {
+            prefix: prefix.parse().unwrap(),
+            announced: false,
+            ip_version: 4,
+            asset: "cloud".to_string(),
+            origin_asn: Vec::new(),
+            asn_path: Vec::new(),
+            owner: "Cloud".to_string(),
+            asset_type: "cloud".to_string(),
+            include_in_china: true,
+            operator_family: None,
+            observed_immediate_upstream_asn: Vec::new(),
+            immediate_upstream_evidence_complete: false,
+            whois_org: Some("Cloud".to_string()),
+            org_id: None,
+            maintainer: Vec::new(),
+            netname: None,
+            rir: "APNIC".to_string(),
+            country: Some("CN".to_string()),
+            geo_location: None,
+            match_rule: "cloud:owner".to_string(),
+            match_source: "whois-owner".to_string(),
+            confidence_score: 94,
+            last_seen: 0,
+        };
+        let asn = PrefixAsnMetadata {
+            prefix: prefix.parse().unwrap(),
+            origin_asn: Vec::new(),
+            observed_origin_asn: Vec::new(),
+            origin_asn_family: Vec::new(),
+            peer_asn: Vec::new(),
+            collectors: Vec::new(),
+            last_seen: 0,
+        };
+        let path = PrefixPathMetadata {
+            prefix: prefix.parse().unwrap(),
+            origin_asn: Vec::new(),
+            asn_path: Vec::new(),
+            transit_asn: Vec::new(),
+            observed_immediate_upstream_asn: Vec::new(),
+            immediate_upstream_evidence_complete: false,
+            peer_asn: Vec::new(),
+            collectors: Vec::new(),
+            last_seen: 0,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("result");
+        write_all(&output, &config, &[(owner, asn, path)], &BTreeMap::new()).unwrap();
+        assert_eq!(
+            fs::read_to_string(output.join("cloud.txt")).unwrap(),
+            "198.51.100.0/24\n"
+        );
+        assert!(
+            fs::read_to_string(output.join("china.txt"))
+                .unwrap()
+                .is_empty()
+        );
+    }
     #[test]
     fn shared_output_basename_aggregates_assets() {
         let mut config: Config = serde_yaml::from_str(
@@ -187,6 +265,7 @@ assets:
                     owner: asset.to_string(),
                     asset_type: "ixp".to_string(),
                     include_in_china: true,
+                    announced: true,
                     operator_family: None,
                     observed_immediate_upstream_asn: Vec::new(),
                     immediate_upstream_evidence_complete: false,

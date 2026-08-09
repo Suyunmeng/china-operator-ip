@@ -99,7 +99,7 @@ generate: dependency prepare
   fi
   target/release/china-asset-pipeline "${args[@]}"
 
-# Verify outputs and the invariant that every emitted CIDR is an exact observed BGP prefix.
+# Verify outputs, including the BGP-only china aggregate and WHOIS-only exceptions.
 guard:
   #!/usr/bin/env python3
   import ipaddress
@@ -142,7 +142,10 @@ guard:
               raise SystemExit(f"duplicate metadata prefix: {prefix}")
           if row["ip_version"] != ipaddress.ip_network(prefix).version:
               raise SystemExit(f"wrong ip_version at line {line_number}: {prefix}")
-          if not row.get("origin_asn"):
+          if row.get("announced", True) is not True:
+              if config["assets"].get(row["asset"], {}).get("require_announced", True):
+                  raise SystemExit(f"non-announced prefix classified by announced-only asset: {prefix}")
+          if not row.get("origin_asn") and row.get("announced", True):
               raise SystemExit(f"missing origin ASN: {prefix}")
           if not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
               if row.get("match_source") not in {"routing-origin-asn", "exclusive-immediate-upstream-asn"}:
@@ -169,8 +172,12 @@ guard:
           elif not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
               raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
           metadata[prefix] = row
-          announced.add(prefix)
-          if row.get("include_in_china", True):
+          if row.get("announced", True) is not True:
+              if config["assets"].get(row["asset"], {}).get("require_announced", True):
+                  raise SystemExit(f"non-announced prefix classified by announced-only asset: {prefix}")
+          else:
+              announced.add(prefix)
+          if row.get("announced", True) and row.get("include_in_china", True):
               if row["ip_version"] == 4:
                   china_v4.add(prefix)
               else:
@@ -239,8 +246,8 @@ guard:
           continue
       for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
           prefix = str(ipaddress.ip_network(line, strict=True))
-          if prefix not in announced:
-              raise SystemExit(f"{path}:{line_number}: not present in BGP metadata: {prefix}")
+          if prefix not in metadata:
+              raise SystemExit(f"{path}:{line_number}: not present in classified metadata: {prefix}")
   print(f"guard passed: {len(metadata)} classified BGP prefixes")
 
 # Summarize prefix counts and IPv4/IPv6 address space by list.

@@ -16,23 +16,26 @@ struct Candidate {
 
 pub fn classify(
     config: &Config,
-    observation: &BgpObservation,
+    observation: Option<&BgpObservation>,
     whois: Option<&WhoisRecord>,
     asn_records: &BTreeMap<u32, AsnRecord>,
     families: &BTreeMap<u32, FamilyMembership>,
     geo: Option<&GeoLocation>,
 ) -> Option<Classification> {
-    let mut routing_candidates = Vec::new();
-    for (asset, rule) in &config.assets {
-        if rule.require_domestic || matches_exclude(rule, observation, whois, asn_records, geo) {
-            continue;
+    if let Some(observation) = observation {
+        let mut routing_candidates = Vec::new();
+        for (asset, rule) in &config.assets {
+            if rule.require_domestic || matches_exclude(rule, observation, whois, asn_records, geo)
+            {
+                continue;
+            }
+            if let Some(candidate) = routing_candidate(asset, rule, observation) {
+                routing_candidates.push(candidate);
+            }
         }
-        if let Some(candidate) = routing_candidate(asset, rule, observation) {
-            routing_candidates.push(candidate);
+        if let Some(candidate) = select_candidate(routing_candidates) {
+            return Some(candidate.classification);
         }
-    }
-    if let Some(candidate) = select_candidate(routing_candidates) {
-        return Some(candidate.classification);
     }
 
     if !is_domestic(config, whois, geo) {
@@ -41,22 +44,27 @@ pub fn classify(
 
     let mut candidates = Vec::new();
     for (asset, rule) in &config.assets {
-        if matches_exclude(rule, observation, whois, asn_records, geo) {
+        if matches_exclude_option(rule, observation, whois, asn_records, geo) {
             continue;
         }
         if let Some(candidate) = owner_candidate(asset, rule, observation, whois) {
             candidates.push(candidate);
             continue;
         }
-        if let Some(candidate) = family_candidate(asset, rule, observation, whois, families) {
-            candidates.push(candidate);
-            continue;
+        if let Some(observation) = observation {
+            if let Some(candidate) = family_candidate(asset, rule, observation, whois, families) {
+                candidates.push(candidate);
+                continue;
+            }
+            if let Some(candidate) = origin_candidate(asset, rule, observation, whois, asn_records)
+            {
+                candidates.push(candidate);
+                continue;
+            }
         }
-        if let Some(candidate) = origin_candidate(asset, rule, observation, whois, asn_records) {
-            candidates.push(candidate);
-            continue;
-        }
-        if let Some(candidate) = fallback_candidate(asset, rule, whois) {
+        if observation.is_some()
+            && let Some(candidate) = fallback_candidate(asset, rule, whois)
+        {
             candidates.push(candidate);
         }
     }
@@ -85,7 +93,7 @@ fn candidate_order(left: &Candidate, right: &Candidate) -> std::cmp::Ordering {
 fn owner_candidate(
     asset: &str,
     rule: &AssetRule,
-    observation: &BgpObservation,
+    observation: Option<&BgpObservation>,
     whois: Option<&WhoisRecord>,
 ) -> Option<Candidate> {
     let whois = whois?;
@@ -112,7 +120,12 @@ fn owner_candidate(
     {
         return None;
     }
-    if matched.is_empty() || !owner_constraints_match(rule, observation) {
+    if matched.is_empty() || (rule.require_announced && observation.is_none()) {
+        return None;
+    }
+    if let Some(observation) = observation
+        && !owner_constraints_match(rule, observation)
+    {
         return None;
     }
     Some(Candidate {
@@ -284,6 +297,31 @@ fn whois_conflicts_with_rule(rule: &AssetRule, whois: Option<&WhoisRecord>) -> b
         || whois.org_id.is_some()
         || whois.netname.is_some()
         || !whois.maintainers.is_empty()
+}
+
+fn matches_exclude_option(
+    rule: &AssetRule,
+    observation: Option<&BgpObservation>,
+    whois: Option<&WhoisRecord>,
+    asn_records: &BTreeMap<u32, AsnRecord>,
+    geo: Option<&GeoLocation>,
+) -> bool {
+    if let Some(observation) = observation {
+        return matches_exclude(rule, observation, whois, asn_records, geo);
+    }
+    let conditions = &rule.exclude;
+    if conditions.is_empty() {
+        return false;
+    }
+    whois.is_some_and(|record| {
+        matches_regex_field(
+            &rule.compiled.exclude_whois_org,
+            record.whois_org.as_deref(),
+        ) || matches_regex_field(&rule.compiled.exclude_org_id, record.org_id.as_deref())
+            || matches_regex_values(&rule.compiled.exclude_maintainer, &record.maintainers)
+            || matches_regex_field(&rule.compiled.exclude_netname, record.netname.as_deref())
+            || matches_country(&conditions.country, record.country.as_deref())
+    }) || matches_geo(&rule.compiled.exclude_geo, geo)
 }
 
 fn fallback_candidate(
@@ -511,6 +549,71 @@ assets:
     }
 
     #[test]
+    fn non_announced_owner_rule_matches_without_bgp_observation() {
+        let yaml = r#"
+version: 1
+assets:
+  cloud:
+    type: cloud
+    owner: Example Cloud
+    priority: 1
+    require_announced: false
+    match:
+      whois_org: ["Example Cloud"]
+      country: [CN]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
+        let whois = WhoisRecord {
+            country: Some("CN".to_string()),
+            whois_org: Some("Example Cloud".to_string()),
+            ..WhoisRecord::default()
+        };
+        assert_eq!(
+            classify(
+                &config,
+                None,
+                Some(&whois),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                None
+            )
+            .unwrap()
+            .asset,
+            "cloud"
+        );
+    }
+    #[test]
+    fn non_announced_rule_does_not_use_fallback() {
+        let yaml = r#"
+version: 1
+assets:
+  fallback:
+    type: other
+    owner: Domestic fallback
+    priority: 1
+    fallback: true
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
+        let whois = WhoisRecord {
+            country: Some("CN".to_string()),
+            whois_org: Some("Unmatched owner".to_string()),
+            ..WhoisRecord::default()
+        };
+        assert_eq!(
+            classify(
+                &config,
+                None,
+                Some(&whois),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                None,
+            ),
+            None
+        );
+    }
+    #[test]
     fn direct_cloudflare_origin_matches_routing_rule() {
         let observation = routing_observation(13335, &[], true);
         let whois = WhoisRecord {
@@ -520,7 +623,7 @@ assets:
         };
         let result = classify(
             &config(),
-            &observation,
+            Some(&observation),
             Some(&whois),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -541,7 +644,7 @@ assets:
         };
         let result = classify(
             &config(),
-            &observation,
+            Some(&observation),
             Some(&whois),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -555,7 +658,7 @@ assets:
         assert_eq!(
             classify(
                 &config(),
-                &conflicting,
+                Some(&conflicting),
                 Some(&whois),
                 &BTreeMap::new(),
                 &BTreeMap::new(),
@@ -576,7 +679,7 @@ assets:
         assert_eq!(
             classify(
                 &config(),
-                &observation,
+                Some(&observation),
                 Some(&whois),
                 &BTreeMap::new(),
                 &BTreeMap::new(),
@@ -597,7 +700,7 @@ assets:
         assert_eq!(
             classify(
                 &config(),
-                &observation,
+                Some(&observation),
                 Some(&whois),
                 &BTreeMap::new(),
                 &BTreeMap::new(),
@@ -615,7 +718,7 @@ assets:
         };
         let result = classify(
             &config(),
-            &observation(),
+            Some(&observation()),
             Some(&whois),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -636,7 +739,7 @@ assets:
         assert_eq!(
             classify(
                 &config(),
-                &observation(),
+                Some(&observation()),
                 Some(&whois),
                 &BTreeMap::new(),
                 &BTreeMap::new(),
@@ -658,7 +761,7 @@ assets:
         assert_eq!(
             classify(
                 &config(),
-                &observation(),
+                Some(&observation()),
                 Some(&whois),
                 &BTreeMap::new(),
                 &BTreeMap::new(),
@@ -689,7 +792,7 @@ assets:
         assert_eq!(
             classify(
                 &config(),
-                &observation(),
+                Some(&observation()),
                 Some(&whois),
                 &asn_records,
                 &BTreeMap::new(),
@@ -712,7 +815,7 @@ assets:
         };
         let result = classify(
             &config(),
-            &observation,
+            Some(&observation),
             Some(&whois),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -752,7 +855,7 @@ assets:
         assert_eq!(
             classify(
                 &config(),
-                &observation,
+                Some(&observation),
                 Some(&whois),
                 &BTreeMap::new(),
                 &BTreeMap::new(),

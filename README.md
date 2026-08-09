@@ -13,7 +13,7 @@
 
 基于真实 BGP 广播、全球 RIR WHOIS、ASN 关系图和动态规则的中国网络资产数据库。
 
-项目不再把「经过某运营商网络」等同于「属于该运营商」，也不再以第三方 IP 归属数据库作为所有权判定依据。最终列表只包含在所采集的 RouteViews/RIPE RIS RIB 中实际出现的 Prefix。
+项目不再把「经过某运营商网络」等同于「属于该运营商」，也不再以第三方 IP 归属数据库作为所有权判定依据。普通资产列表和 `china*` 聚合列表只包含在所采集的 RouteViews/RIPE RIS RIB 中实际出现的 Prefix；`bgpgdcn`、`ytnetcn`、`halocloudcn`、`owocloudcn`、`heptaskycn` 五个明确配置的 WHOIS-only 云资产可以额外包含尚未广播的 RIR Prefix。
 
 ## 核心原则
 
@@ -30,7 +30,7 @@
 - AS4134、AS4809、AS9808、AS4837 等出现在 AS Path 中间位置时只是 Transit ASN，**不会**使 Prefix 自动归属于对应运营商。
 - Cloudflare 是唯一的路由特例：查询不限制 WHOIS 地区，也不限制 Organisation/Org ID/Maintainer/NetName；直接 Origin AS13335 的已广播 Prefix 可以归入 Cloudflare，其他 Origin 只有在所有可用观测都表明其即时上游 ASN 集合**恰好等于 `{13335}`** 时才归入 Cloudflare。只要存在其他即时上游、缺失/不可解析路径，或者 AS13335 仅出现在更深层 AS Path，就不会通过该特例。
 - Cloudflare 路由归属仍然只处理已广播 Prefix，且路由归属和普通 WHOIS Owner 归属会在元数据中的 `match_source` 区分。其他资产继续受 Prefix WHOIS 必须为 `CN`、Geo 不得明确指向海外的门槛约束。
-- 所有列表原样保留观测到的 IPv4/IPv6 BGP Prefix，不从 RIR `/29`、`/32` 等分配块展开未广播的 `/48` 或 `/64`。
+- `china*`、普通资产列表和路由资产列表只包含 BGP 已广播的精确 IPv4/IPv6 Prefix；五个 WHOIS-only 云资产的专属列表例外允许包含未广播的 RIR Prefix。程序不会从 RIR `/29`、`/32` 等分配块展开未广播的 `/48` 或 `/64`。
 - WHOIS Country 必须为 `CN`，且可选 Geo 辅助数据不能明确指向海外；否则 Prefix 不进入中国资产结果。
 - Geo 只提供 `country/subdivision/city` 位置和海外排除信号，不能确定 IP Owner。
 
@@ -57,15 +57,15 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 
 新增资产分类包括：
 
-- `aliyuncn*` / `aliyun*`
-- `tencentcn*` / `tencent*`
-- `volcanoenginecn*` / `volcanoengine*`
-- `ucloudcn*` / `ucloud*`
-- `baiducn*` / `baidu*`
-- `shixpcn*` / `shixp*`
+- `aliyuncn*`
+- `tencentcn*`
+- `volcanoenginecn*`
+- `ucloudcn*`
+- `baiducn*`
+- `shixp*`
 - `cnixp*`
-- `ixp*`（SHIXP 与 CNIXP 聚合）
 - `cloudflare*`（兼容保留）
+- `bgpgdcn*`、`ytnetcn*`、`halocloudcn*`、`owocloudcn*`、`heptaskycn*`：按 CN WHOIS Owner 查询；这些五个云资产允许包含尚未在 BGP 广播的 RIR Prefix。
 
 ### Metadata
 
@@ -124,7 +124,9 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 - `exclude.geo`（仅用于位置排除；`match.geo` 会被配置校验拒绝）
 - `match.asn_org`
 - 对称的 `exclude` 条件
-- `outputs`、`include_in_china`、`fallback`
+- `outputs`、`include_in_china`、`require_announced`、`fallback`
+
+默认 `require_announced: true`，所以普通资产仍只能输出已在全球 BGP 中出现的 Prefix。仅允许 WHOIS Owner + `country` 的规则将 `require_announced: false` 作为非广播例外；当前这类例外只包括 `bgpgdcn`、`ytnetcn`、`halocloudcn`、`owocloudcn` 和 `heptaskycn`，并且仍要求 WHOIS Country 为 `CN`。
 
 所有资产默认保持 `require_domestic: true`；Cloudflare 的路由特例可以显式设为 `require_domestic: false`，但必须是 routing-only 规则，不得混入 WHOIS/ASN Family/fallback 归属条件。
 
@@ -186,7 +188,7 @@ ASN Family 规则只维护少量根节点，例如：
 # 下载 BGP RIB 和五大 RIR WHOIS、编译并生成
 just generate
 
-# 检查所有 TXT 都来自 prefix-owner.jsonl 中的 BGP Prefix
+# 检查普通列表和 china* 聚合只使用 BGP Prefix，同时检查 WHOIS-only 专属列表
 just guard
 
 # 格式化、Clippy、单元测试

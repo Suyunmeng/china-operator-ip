@@ -77,6 +77,8 @@ pub struct AssetRule {
     pub include_in_china: bool,
     #[serde(default = "default_true")]
     pub require_domestic: bool,
+    #[serde(default = "default_true")]
+    pub require_announced: bool,
     #[serde(default)]
     pub fallback: bool,
     #[serde(skip)]
@@ -220,6 +222,28 @@ impl Config {
                 }
                 if !rule.match_.is_empty() || !rule.roots.is_empty() || rule.fallback {
                     bail!("asset {id} disables the domestic gate but is not a routing-only rule");
+                }
+            }
+            if !rule.require_announced {
+                let owner_conditions = !rule.match_.whois_org.is_empty()
+                    || !rule.match_.org_id.is_empty()
+                    || !rule.match_.maintainer.is_empty()
+                    || !rule.match_.netname.is_empty();
+                let has_unsupported_match = !rule.match_.transit_asn.is_empty()
+                    || !rule.match_.origin_asn.is_empty()
+                    || !rule.match_.geo.is_empty()
+                    || !rule.match_.asn_org.is_empty();
+                if !owner_conditions
+                    || rule.match_.country.is_empty()
+                    || !rule.exclude.is_empty()
+                    || rule.routing.is_some()
+                    || !rule.roots.is_empty()
+                    || rule.fallback
+                    || has_unsupported_match
+                {
+                    bail!(
+                        "asset {id} disables the announced-prefix gate but is not a WHOIS owner-and-country-only rule"
+                    );
                 }
             }
             if rule.owner.trim().is_empty() {
@@ -422,6 +446,77 @@ fn compile_patterns(id: &str, field: &str, values: &[String]) -> Result<Vec<Rege
 mod tests {
     use super::*;
 
+    #[test]
+    fn non_announced_owner_only_rule_is_allowed() {
+        let yaml = r#"
+version: 1
+assets:
+  cloud:
+    type: cloud
+    owner: Example Cloud
+    priority: 1
+    require_announced: false
+    match:
+      whois_org: ["Example Cloud"]
+      country: [CN]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
+    }
+    #[test]
+    fn non_announced_rule_requires_whois_owner_condition() {
+        let yaml = r#"
+version: 1
+assets:
+  cloud:
+    type: cloud
+    owner: Example Cloud
+    priority: 1
+    require_announced: false
+    match:
+      country: [CN]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn non_announced_rule_rejects_bgp_condition() {
+        let yaml = r#"
+version: 1
+assets:
+  cloud:
+    type: cloud
+    owner: Example Cloud
+    priority: 1
+    require_announced: false
+    match:
+      whois_org: [Example]
+      origin_asn: [64500]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn non_announced_rule_rejects_non_owner_exclude_condition() {
+        let yaml = r#"
+version: 1
+assets:
+  cloud:
+    type: cloud
+    owner: Example Cloud
+    priority: 1
+    require_announced: false
+    match:
+      whois_org: [Example]
+      country: [CN]
+    exclude:
+      geo: [overseas]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
     #[test]
     fn routing_conditions_are_validated() {
         let yaml = r#"

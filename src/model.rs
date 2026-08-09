@@ -93,6 +93,7 @@ pub struct Classification {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PrefixMetadata {
     pub prefix: IpNet,
+    pub announced: bool,
     pub ip_version: u8,
     pub asset: String,
     pub origin_asn: Vec<u32>,

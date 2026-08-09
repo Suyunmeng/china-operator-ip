@@ -113,6 +113,13 @@ impl WhoisIndex {
         }
     }
 
+    pub fn prefixes(&self) -> impl Iterator<Item = &WhoisRecord> {
+        self.v4
+            .iter()
+            .flat_map(|records| records.values())
+            .chain(self.v6.iter().flat_map(|records| records.values()))
+    }
+
     pub fn asns(&self) -> &BTreeMap<u32, AsnRecord> {
         &self.asns
     }

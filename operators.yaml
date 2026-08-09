@@ -146,11 +146,56 @@ assets:
     type: cloud
     owner: Dongguan Xingxiu Technology Co., Ltd
     priority: 925
+    require_announced: false
     match:
       whois_org:
-        - '^Dongguan Xingxiu Technology Co\\., Ltd$'
+        - '^Dongguan Xingxiu Technology Co\., Ltd$'
       country: [CN]
     outputs: [bgpgdcn]
+
+  ytnetcn:
+    type: cloud
+    owner: Hunan Yuntu Network Technology Co., Ltd
+    priority: 924
+    require_announced: false
+    match:
+      whois_org:
+        - '^Hunan Yuntu Network Technology Co\., Ltd$'
+      country: [CN]
+    outputs: [ytnetcn]
+
+  halocloudcn:
+    type: cloud
+    owner: Guangdong Xingwang Technology Co., Ltd
+    priority: 923
+    require_announced: false
+    match:
+      whois_org:
+        - '^Guangdong Xingwang Technology Co\., Ltd$'
+      country: [CN]
+    outputs: [halocloudcn]
+
+  owocloudcn:
+    type: cloud
+    owner: Shenzhen Moerin Technology Co., Ltd
+    priority: 922
+    require_announced: false
+    match:
+      whois_org:
+        - '^Shenzhen Moerin Technology Co\., Ltd$'
+      country: [CN]
+    outputs: [owocloudcn]
+
+  heptaskycn:
+    type: cloud
+    owner: Shenzhen Qiyue Star Technology Co
+    priority: 921
+    require_announced: false
+    match:
+      whois_org:
+        - '^Shenzhen Qiyue Star Technology Co$'
+      country: [CN]
+    outputs: [heptaskycn]
 
   cloudflare:
     type: cdn

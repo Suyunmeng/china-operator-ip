@@ -33,6 +33,14 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
     }
     let geo = GeoIndex::load_optional(options.geo_file.as_deref())?;
     let families = infer_families(&config, &observations, whois.asns());
+    let non_announced_records: Vec<_> = whois
+        .prefixes()
+        .filter(|record| {
+            record.country.as_deref().is_some_and(|country| {
+                country.eq_ignore_ascii_case(&config.settings.domestic_country)
+            })
+        })
+        .collect();
     let mut classified = Vec::new();
     let mut rejected_without_whois = 0;
     let mut rejected_unclassified = 0;
@@ -45,7 +53,7 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
         let geo_location = geo.lookup(observation.prefix);
         let Some(classification) = classify(
             &config,
-            observation,
+            Some(observation),
             Some(owner_record),
             whois.asns(),
             &families,
@@ -76,6 +84,7 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
         classified.push((
             PrefixMetadata {
                 prefix: observation.prefix,
+                announced: true,
                 ip_version: if observation.prefix.addr().is_ipv4() {
                     4
                 } else {
@@ -121,6 +130,78 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                 peer_asn: observation.peer_asns.iter().copied().collect(),
                 collectors: observation.collectors.iter().cloned().collect(),
                 last_seen: observation.last_seen,
+            },
+        ));
+    }
+    for record in non_announced_records {
+        let prefix = record
+            .prefix
+            .expect("WHOIS prefix record must contain a prefix");
+        if observations.contains_key(&prefix) {
+            continue;
+        }
+        let geo_location = geo.lookup(prefix);
+        let Some(classification) = classify(
+            &config,
+            None,
+            Some(record),
+            whois.asns(),
+            &families,
+            geo_location,
+        ) else {
+            continue;
+        };
+        let Some(rule) = config.assets.get(&classification.asset) else {
+            continue;
+        };
+        if rule.require_announced {
+            continue;
+        }
+        classified.push((
+            PrefixMetadata {
+                prefix,
+                announced: false,
+                ip_version: if prefix.addr().is_ipv4() { 4 } else { 6 },
+                asset: classification.asset,
+                origin_asn: Vec::new(),
+                asn_path: Vec::new(),
+                owner: classification.owner,
+                asset_type: classification.asset_type,
+                include_in_china: rule.include_in_china,
+                operator_family: classification.operator_family,
+                observed_immediate_upstream_asn: Vec::new(),
+                immediate_upstream_evidence_complete: false,
+                whois_org: record.whois_org.clone(),
+                org_id: record.org_id.clone(),
+                maintainer: record.maintainers.clone(),
+                netname: record.netname.clone(),
+                rir: record.rir.clone(),
+                country: record.country.clone(),
+                geo_location: geo_location.cloned(),
+                match_rule: classification.match_rule,
+                match_source: classification.match_source,
+                confidence_score: classification.confidence_score,
+                last_seen: 0,
+            },
+            PrefixAsnMetadata {
+                prefix,
+                origin_asn: Vec::new(),
+                observed_origin_asn: Vec::new(),
+                origin_asn_family: Vec::new(),
+                peer_asn: Vec::new(),
+                collectors: Vec::new(),
+                last_seen: 0,
+            },
+            PrefixPathMetadata {
+                prefix,
+                origin_asn: Vec::new(),
+                asn_path: Vec::new(),
+                transit_asn: Vec::new(),
+                observed_immediate_upstream_asn: Vec::new(),
+                immediate_upstream_evidence_complete: false,
+                peer_asn: Vec::new(),
+                collectors: Vec::new(),
+                last_seen: 0,
             },
         ));
     }
