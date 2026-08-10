@@ -197,6 +197,17 @@ assets:
       country: [CN]
     outputs: [heptaskycn]
 
+  sparkvmcn:
+    type: cloud
+    owner: Guangdong Tongri Network Technology Co., Ltd
+    priority: 920
+    require_announced: false
+    match:
+      whois_org:
+        - 'Guangdong Tongri Network Technology'
+      country: [CN]
+    outputs: [sparkvmcn]
+
   cloudflare:
     type: cdn
     owner: Cloudflare
