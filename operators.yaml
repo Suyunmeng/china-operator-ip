@@ -149,7 +149,7 @@ assets:
     require_announced: false
     match:
       whois_org:
-        - 'DXTCL CN'
+        - 'Dongguan Xingxiu Technology'
       country: [CN]
     outputs: [bgpgdcn]
 
