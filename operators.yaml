@@ -149,7 +149,7 @@ assets:
     require_announced: false
     match:
       whois_org:
-        - '^Dongguan Xingxiu Technology Co\., Ltd$'
+        - 'DXTCL CN'
       country: [CN]
     outputs: [bgpgdcn]
 
@@ -160,7 +160,7 @@ assets:
     require_announced: false
     match:
       whois_org:
-        - '^Hunan Yuntu Network Technology Co\., Ltd$'
+        - 'Hunan Yuntu Network Technology Co'
       country: [CN]
     outputs: [ytnetcn]
 
@@ -182,7 +182,7 @@ assets:
     require_announced: false
     match:
       whois_org:
-        - '^Shenzhen Moerin Technology Co\., Ltd$'
+        - 'Shenzhen Moerin Technology Co'
       country: [CN]
     outputs: [owocloudcn]
 
@@ -193,7 +193,7 @@ assets:
     require_announced: false
     match:
       whois_org:
-        - '^Shenzhen Qiyue Star Technology Co$'
+        - 'SHENZHEN QIYUE STAR TECHNOLOGY CO'
       country: [CN]
     outputs: [heptaskycn]
 
