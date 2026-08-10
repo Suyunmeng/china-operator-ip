@@ -1,8 +1,9 @@
 {
-  "classified_prefixes": 107435,
+  "classified_prefixes": 107438,
   "files": [
     "cernet6.txt",
     "china46.txt",
+    "sparkvmcn.txt",
     "cloudflare.txt",
     "cstnet6.txt",
     "tencentcn6.txt",
@@ -22,6 +23,7 @@
     "volcanoenginecn.txt",
     "unicom46.txt",
     "chinanet.txt",
+    "sparkvmcn46.txt",
     "china6.txt",
     "cnixpcn46.txt",
     "volcanoenginecn6.txt",
@@ -60,6 +62,7 @@
     "cnixpcn6.txt",
     "tencentcn.txt",
     "owocloudcn6.txt",
+    "sparkvmcn6.txt",
     "cmcc6.txt",
     "halocloudcn6.txt",
     "heptaskycn46.txt",

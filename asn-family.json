@@ -11335,6 +11335,17 @@
     ]
   },
   {
+    "asn": 134457,
+    "family": "chinanet",
+    "asset": "chinanet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 134468,
     "family": "chinanet",
     "asset": "chinanet",
