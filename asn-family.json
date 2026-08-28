@@ -4042,7 +4042,8 @@
     "evidence": [
       "domestic-asn-whois",
       "asn-organisation-rule",
-      "shared-maintainer"
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
     ]
   },
   {
@@ -5185,17 +5186,6 @@
     "asn": 38321,
     "family": "chinanet",
     "asset": "chinanet",
-    "score": 70,
-    "depth": 2,
-    "evidence": [
-      "shared-maintainer",
-      "origin-side-bgp-adjacency"
-    ]
-  },
-  {
-    "asn": 38325,
-    "family": "cernet",
-    "asset": "cernet",
     "score": 70,
     "depth": 2,
     "evidence": [
@@ -9195,6 +9185,17 @@
   },
   {
     "asn": 132022,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 132023,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
