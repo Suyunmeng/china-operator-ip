@@ -80,6 +80,8 @@ pub struct AssetRule {
     #[serde(default = "default_true")]
     pub require_announced: bool,
     #[serde(default)]
+    pub exclude_announced: bool,
+    #[serde(default)]
     pub fallback: bool,
     #[serde(skip)]
     pub compiled: CompiledRule,
@@ -223,6 +225,11 @@ impl Config {
                 if !rule.match_.is_empty() || !rule.roots.is_empty() || rule.fallback {
                     bail!("asset {id} disables the domestic gate but is not a routing-only rule");
                 }
+            }
+            if rule.exclude_announced && rule.require_announced {
+                bail!(
+                    "asset {id} excludes announced prefixes but still requires them to be announced"
+                );
             }
             if !rule.require_announced {
                 let owner_conditions = !rule.match_.whois_org.is_empty()
@@ -445,6 +452,24 @@ fn compile_patterns(id: &str, field: &str, values: &[String]) -> Result<Vec<Rege
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exclude_announced_requires_non_announced_rule() {
+        let yaml = r#"
+version: 1
+assets:
+  cloud:
+    type: cloud
+    owner: Cloud
+    priority: 1
+    exclude_announced: true
+    match:
+      whois_org: [Cloud]
+      country: [CN]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
 
     #[test]
     fn non_announced_owner_only_rule_is_allowed() {

@@ -147,6 +147,7 @@ assets:
     owner: Dongguan Xingxiu Technology Co., Ltd
     priority: 925
     require_announced: false
+    exclude_announced: true
     match:
       whois_org:
         - 'Dongguan Xingxiu Technology'
@@ -158,6 +159,7 @@ assets:
     owner: Hunan Yuntu Network Technology Co., Ltd
     priority: 924
     require_announced: false
+    exclude_announced: true
     match:
       whois_org:
         - 'Hunan Yuntu Network Technology Co'
@@ -169,6 +171,7 @@ assets:
     owner: Guangdong Xingwang Technology Co., Ltd
     priority: 923
     require_announced: false
+    exclude_announced: true
     match:
       whois_org:
         - '^Guangdong Xingwang Technology Co\., Ltd$'
@@ -180,6 +183,7 @@ assets:
     owner: Shenzhen Moerin Technology Co., Ltd
     priority: 922
     require_announced: false
+    exclude_announced: true
     match:
       whois_org:
         - 'Shenzhen Moerin Technology Co'
@@ -191,6 +195,7 @@ assets:
     owner: Shenzhen Qiyue Star Technology Co
     priority: 921
     require_announced: false
+    exclude_announced: true
     match:
       whois_org:
         - 'SHENZHEN QIYUE STAR TECHNOLOGY CO'
@@ -202,6 +207,7 @@ assets:
     owner: Guangdong Tongri Network Technology Co., Ltd
     priority: 920
     require_announced: false
+    exclude_announced: true
     match:
       whois_org:
         - 'Guangdong Tongri Network Technology'

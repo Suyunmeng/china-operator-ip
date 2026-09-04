@@ -25,7 +25,9 @@ pub fn classify(
     if let Some(observation) = observation {
         let mut routing_candidates = Vec::new();
         for (asset, rule) in &config.assets {
-            if rule.require_domestic || matches_exclude(rule, observation, whois, asn_records, geo)
+            if rule.exclude_announced
+                || rule.require_domestic
+                || matches_exclude(rule, observation, whois, asn_records, geo)
             {
                 continue;
             }
@@ -44,7 +46,9 @@ pub fn classify(
 
     let mut candidates = Vec::new();
     for (asset, rule) in &config.assets {
-        if matches_exclude_option(rule, observation, whois, asn_records, geo) {
+        if (observation.is_some() && rule.exclude_announced)
+            || matches_exclude_option(rule, observation, whois, asn_records, geo)
+        {
             continue;
         }
         if let Some(candidate) = owner_candidate(asset, rule, observation, whois) {

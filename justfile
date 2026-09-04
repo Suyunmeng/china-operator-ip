@@ -145,6 +145,8 @@ guard:
           if row.get("announced", True) is not True:
               if config["assets"].get(row["asset"], {}).get("require_announced", True):
                   raise SystemExit(f"non-announced prefix classified by announced-only asset: {prefix}")
+          if row.get("announced", True) and config["assets"].get(row["asset"], {}).get("exclude_announced", False):
+              raise SystemExit(f"announced prefix classified by unannounced-only asset: {prefix}")
           if not row.get("origin_asn") and row.get("announced", True):
               raise SystemExit(f"missing origin ASN: {prefix}")
           if not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
