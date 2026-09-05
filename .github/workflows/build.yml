@@ -73,7 +73,14 @@ jobs:
             network-assets-${{ runner.os }}-
       - name: Generate complete staged database
         working-directory: source
-        run: just generate
+        run: |
+          just generate &
+          generation_pid=$!
+          while kill -0 "$generation_pid" 2>/dev/null; do
+            printf 'generation still running at %s\n' "$(date -u +%FT%TZ)"
+            sleep 60
+          done
+          wait "$generation_pid"
       - name: Validate BGP-only output invariant
         working-directory: source
         run: just guard
