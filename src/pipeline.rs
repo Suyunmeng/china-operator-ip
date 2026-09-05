@@ -252,7 +252,6 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                     6
                 },
                 origin_asn: observation.origin_asns.iter().copied().collect(),
-                observed_origin_asn: observation.observed_origin_asns.iter().copied().collect(),
                 asset: classification.asset.clone(),
                 asn_path: observation.asn_path.clone(),
                 owner: classification.owner.clone(),
@@ -333,7 +332,6 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                     ip_version: if prefix.addr().is_ipv4() { 4 } else { 6 },
                     asset: classification.asset.clone(),
                     origin_asn: Vec::new(),
-                    observed_origin_asn: Vec::new(),
                     asn_path: Vec::new(),
                     owner: classification.owner.clone(),
                     asset_type: classification.asset_type.clone(),

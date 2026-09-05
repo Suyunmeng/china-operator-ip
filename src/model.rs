@@ -98,7 +98,6 @@ pub struct PrefixMetadata {
     pub ip_version: u8,
     pub asset: String,
     pub origin_asn: Vec<u32>,
-    pub observed_origin_asn: Vec<u32>,
     pub asn_path: Vec<u32>,
     pub owner: String,
     pub asset_type: String,

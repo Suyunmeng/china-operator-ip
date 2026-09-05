@@ -154,7 +154,7 @@ fn routing_candidate(
 ) -> Option<Candidate> {
     let routing = rule.routing.as_ref()?;
     if observation
-        .observed_origin_asns
+        .origin_asns
         .iter()
         .any(|origin| routing.direct_origin_asn.contains(origin))
     {
@@ -636,41 +636,6 @@ assets:
         )
         .unwrap();
         assert_eq!(result.asset, "cloudflare");
-        assert_eq!(result.match_source, "routing-origin-asn");
-    }
-
-    #[test]
-    fn direct_observed_origin_matches_routing_rule_for_anycast() {
-        let yaml = r#"
-version: 1
-assets:
-  tencentcn:
-    type: cloud
-    owner: Tencent Cloud
-    priority: 1
-    require_domestic: false
-    routing:
-      direct_origin_asn: [45090]
-      exclusive_immediate_upstream_asn: [45090]
-"#;
-        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
-        config.validate_and_compile().unwrap();
-        let mut observation = routing_observation(65000, &[64500], true);
-        observation.observed_origin_asns.insert(45090);
-        let whois = WhoisRecord {
-            country: Some("US".to_string()),
-            ..WhoisRecord::default()
-        };
-        let result = classify(
-            &config,
-            Some(&observation),
-            Some(&whois),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            None,
-        )
-        .unwrap();
-        assert_eq!(result.asset, "tencentcn");
         assert_eq!(result.match_source, "routing-origin-asn");
     }
 
