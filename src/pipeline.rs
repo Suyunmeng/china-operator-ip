@@ -163,7 +163,12 @@ fn final_upstream_asns(config: &Config, observation: &crate::model::BgpObservati
                 .insert(upstream);
         }
     }
-    upstreams_by_origin.into_values().flatten().collect()
+    upstreams_by_origin
+        .into_values()
+        .flatten()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn is_configured_china_asset(config: &Config, asset: &str) -> bool {
@@ -466,7 +471,7 @@ assets:
 
     #[test]
     fn multiple_allowed_final_upstreams_are_included_in_china() {
-        let observation = observation([vec![4134, 134773, 56040], vec![9808, 56040]]);
+        let observation = observation([vec![9808, 56040], vec![4134, 56041]]);
         assert_eq!(
             final_upstream_asns(&china_config(), &observation),
             vec![4134, 9808]
