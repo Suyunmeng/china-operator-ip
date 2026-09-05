@@ -1,6 +1,11 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    net::{Ipv4Addr, Ipv6Addr},
+    path::PathBuf,
+};
 
 use anyhow::Result;
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 
 use crate::{
     asn_graph::infer_families,
@@ -13,6 +18,133 @@ use crate::{
     rules::classify,
 };
 
+#[derive(Default)]
+struct AnnouncedPrefixIndex {
+    v4: BTreeSet<(u32, u8)>,
+    v6: BTreeSet<(u128, u8)>,
+}
+
+impl AnnouncedPrefixIndex {
+    fn from_prefixes(prefixes: impl IntoIterator<Item = IpNet>) -> Self {
+        let mut index = Self::default();
+        for prefix in prefixes {
+            match prefix {
+                IpNet::V4(prefix) => {
+                    index
+                        .v4
+                        .insert((u32::from(prefix.network()), prefix.prefix_len()));
+                }
+                IpNet::V6(prefix) => {
+                    index
+                        .v6
+                        .insert((u128::from(prefix.network()), prefix.prefix_len()));
+                }
+            }
+        }
+        index
+    }
+
+    fn unannounced_fragments(&self, prefix: IpNet) -> Vec<IpNet> {
+        self.announced_subprefixes(prefix)
+            .into_iter()
+            .fold(vec![prefix], |remaining, cut| {
+                remaining
+                    .into_iter()
+                    .flat_map(|prefix| subtract_prefix(prefix, cut))
+                    .collect()
+            })
+    }
+
+    fn announced_subprefixes(&self, prefix: IpNet) -> BTreeSet<IpNet> {
+        match prefix {
+            IpNet::V4(prefix) => self
+                .v4
+                .range((u32::from(prefix.network()), 0)..=(v4_last_address(prefix), u8::MAX))
+                .filter_map(|&(network, length)| {
+                    let announced = Ipv4Net::new(Ipv4Addr::from(network), length).ok()?;
+                    contains_prefix(IpNet::V4(prefix), IpNet::V4(announced))
+                        .then_some(IpNet::V4(announced))
+                })
+                .collect(),
+            IpNet::V6(prefix) => self
+                .v6
+                .range((u128::from(prefix.network()), 0)..=(v6_last_address(prefix), u8::MAX))
+                .filter_map(|&(network, length)| {
+                    let announced = Ipv6Net::new(Ipv6Addr::from(network), length).ok()?;
+                    contains_prefix(IpNet::V6(prefix), IpNet::V6(announced))
+                        .then_some(IpNet::V6(announced))
+                })
+                .collect(),
+        }
+    }
+}
+
+fn contains_prefix(outer: IpNet, inner: IpNet) -> bool {
+    match (outer, inner) {
+        (IpNet::V4(outer), IpNet::V4(inner)) => {
+            outer.prefix_len() <= inner.prefix_len() && outer.contains(&inner.network())
+        }
+        (IpNet::V6(outer), IpNet::V6(inner)) => {
+            outer.prefix_len() <= inner.prefix_len() && outer.contains(&inner.network())
+        }
+        _ => false,
+    }
+}
+
+fn subtract_prefix(prefix: IpNet, cut: IpNet) -> Vec<IpNet> {
+    if prefix == cut {
+        return Vec::new();
+    }
+    if !contains_prefix(prefix, cut) {
+        return vec![prefix];
+    }
+    split_prefix(prefix)
+        .into_iter()
+        .flat_map(|child| {
+            if contains_prefix(child, cut) {
+                subtract_prefix(child, cut)
+            } else {
+                vec![child]
+            }
+        })
+        .collect()
+}
+
+fn split_prefix(prefix: IpNet) -> [IpNet; 2] {
+    match prefix {
+        IpNet::V4(prefix) => {
+            let length = prefix.prefix_len() + 1;
+            let start = u32::from(prefix.network());
+            let offset = 1_u32 << (32 - length);
+            [
+                IpNet::V4(Ipv4Net::new(Ipv4Addr::from(start), length).expect("valid subnet")),
+                IpNet::V4(
+                    Ipv4Net::new(Ipv4Addr::from(start + offset), length).expect("valid subnet"),
+                ),
+            ]
+        }
+        IpNet::V6(prefix) => {
+            let length = prefix.prefix_len() + 1;
+            let start = u128::from(prefix.network());
+            let offset = 1_u128 << (128 - length);
+            [
+                IpNet::V6(Ipv6Net::new(Ipv6Addr::from(start), length).expect("valid subnet")),
+                IpNet::V6(
+                    Ipv6Net::new(Ipv6Addr::from(start + offset), length).expect("valid subnet"),
+                ),
+            ]
+        }
+    }
+}
+
+fn v4_last_address(prefix: Ipv4Net) -> u32 {
+    u32::from(prefix.network()) | (u32::MAX >> prefix.prefix_len())
+}
+
+fn v6_last_address(prefix: Ipv6Net) -> u128 {
+    u128::from(prefix.network()) | (u128::MAX >> prefix.prefix_len())
+}
+
 pub struct PipelineOptions {
     pub rule_file: PathBuf,
     pub mrt_files: Vec<PathBuf>,
@@ -24,6 +156,7 @@ pub struct PipelineOptions {
 pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
     let config = Config::load(&options.rule_file)?;
     let observations = load_ribs(&options.mrt_files)?;
+    let announced_prefixes = AnnouncedPrefixIndex::from_prefixes(observations.keys().copied());
     if observations.is_empty() {
         anyhow::bail!("no announced origin prefixes found in the supplied MRT files");
     }
@@ -91,12 +224,12 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                     6
                 },
                 origin_asn: observation.origin_asns.iter().copied().collect(),
-                asset: classification.asset,
+                asset: classification.asset.clone(),
                 asn_path: observation.asn_path.clone(),
-                owner: classification.owner,
-                asset_type: classification.asset_type,
+                owner: classification.owner.clone(),
+                asset_type: classification.asset_type.clone(),
                 include_in_china,
-                operator_family: classification.operator_family,
+                operator_family: classification.operator_family.clone(),
                 observed_immediate_upstream_asn: observed_immediate_upstream_asn.clone(),
                 immediate_upstream_evidence_complete,
                 whois_org: owner_record.whois_org.clone(),
@@ -106,8 +239,8 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                 rir: owner_record.rir.clone(),
                 country: owner_record.country.clone(),
                 geo_location: geo_location.cloned(),
-                match_rule: classification.match_rule,
-                match_source: classification.match_source,
+                match_rule: classification.match_rule.clone(),
+                match_source: classification.match_source.clone(),
                 confidence_score: classification.confidence_score,
                 last_seen: observation.last_seen,
             },
@@ -137,9 +270,6 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
         let prefix = record
             .prefix
             .expect("WHOIS prefix record must contain a prefix");
-        if observations.contains_key(&prefix) {
-            continue;
-        }
         let geo_location = geo.lookup(prefix);
         let Some(classification) = classify(
             &config,
@@ -157,53 +287,62 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
         if rule.require_announced {
             continue;
         }
-        classified.push((
-            PrefixMetadata {
-                prefix,
-                announced: false,
-                ip_version: if prefix.addr().is_ipv4() { 4 } else { 6 },
-                asset: classification.asset,
-                origin_asn: Vec::new(),
-                asn_path: Vec::new(),
-                owner: classification.owner,
-                asset_type: classification.asset_type,
-                include_in_china: rule.include_in_china,
-                operator_family: classification.operator_family,
-                observed_immediate_upstream_asn: Vec::new(),
-                immediate_upstream_evidence_complete: false,
-                whois_org: record.whois_org.clone(),
-                org_id: record.org_id.clone(),
-                maintainer: record.maintainers.clone(),
-                netname: record.netname.clone(),
-                rir: record.rir.clone(),
-                country: record.country.clone(),
-                geo_location: geo_location.cloned(),
-                match_rule: classification.match_rule,
-                match_source: classification.match_source,
-                confidence_score: classification.confidence_score,
-                last_seen: 0,
-            },
-            PrefixAsnMetadata {
-                prefix,
-                origin_asn: Vec::new(),
-                observed_origin_asn: Vec::new(),
-                origin_asn_family: Vec::new(),
-                peer_asn: Vec::new(),
-                collectors: Vec::new(),
-                last_seen: 0,
-            },
-            PrefixPathMetadata {
-                prefix,
-                origin_asn: Vec::new(),
-                asn_path: Vec::new(),
-                transit_asn: Vec::new(),
-                observed_immediate_upstream_asn: Vec::new(),
-                immediate_upstream_evidence_complete: false,
-                peer_asn: Vec::new(),
-                collectors: Vec::new(),
-                last_seen: 0,
-            },
-        ));
+        let prefixes = if rule.exclude_announced {
+            announced_prefixes.unannounced_fragments(prefix)
+        } else if observations.contains_key(&prefix) {
+            Vec::new()
+        } else {
+            vec![prefix]
+        };
+        for prefix in prefixes {
+            classified.push((
+                PrefixMetadata {
+                    prefix,
+                    announced: false,
+                    ip_version: if prefix.addr().is_ipv4() { 4 } else { 6 },
+                    asset: classification.asset.clone(),
+                    origin_asn: Vec::new(),
+                    asn_path: Vec::new(),
+                    owner: classification.owner.clone(),
+                    asset_type: classification.asset_type.clone(),
+                    include_in_china: rule.include_in_china,
+                    operator_family: classification.operator_family.clone(),
+                    observed_immediate_upstream_asn: Vec::new(),
+                    immediate_upstream_evidence_complete: false,
+                    whois_org: record.whois_org.clone(),
+                    org_id: record.org_id.clone(),
+                    maintainer: record.maintainers.clone(),
+                    netname: record.netname.clone(),
+                    rir: record.rir.clone(),
+                    country: record.country.clone(),
+                    geo_location: geo_location.cloned(),
+                    match_rule: classification.match_rule.clone(),
+                    match_source: classification.match_source.clone(),
+                    confidence_score: classification.confidence_score,
+                    last_seen: 0,
+                },
+                PrefixAsnMetadata {
+                    prefix,
+                    origin_asn: Vec::new(),
+                    observed_origin_asn: Vec::new(),
+                    origin_asn_family: Vec::new(),
+                    peer_asn: Vec::new(),
+                    collectors: Vec::new(),
+                    last_seen: 0,
+                },
+                PrefixPathMetadata {
+                    prefix,
+                    origin_asn: Vec::new(),
+                    asn_path: Vec::new(),
+                    transit_asn: Vec::new(),
+                    observed_immediate_upstream_asn: Vec::new(),
+                    immediate_upstream_evidence_complete: false,
+                    peer_asn: Vec::new(),
+                    collectors: Vec::new(),
+                    last_seen: 0,
+                },
+            ));
+        }
     }
     classified.sort_by_key(|(owner, _, _)| owner.prefix);
     write_all(&options.output_dir, &config, &classified, &families)?;
@@ -229,4 +368,36 @@ pub struct PipelineSummary {
     pub rejected_unclassified: usize,
     pub asn_family_members: usize,
     pub per_asset: BTreeMap<String, usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unannounced_fragments_remove_announced_subprefixes_only() {
+        let index = AnnouncedPrefixIndex::from_prefixes([
+            "161.248.0.0/16".parse().unwrap(),
+            "161.248.137.0/24".parse().unwrap(),
+        ]);
+        assert_eq!(
+            index.unannounced_fragments("161.248.136.0/23".parse().unwrap()),
+            vec!["161.248.136.0/24".parse().unwrap()]
+        );
+    }
+
+    #[test]
+    fn unannounced_fragments_remove_ipv6_subprefixes_only() {
+        let index = AnnouncedPrefixIndex::from_prefixes([
+            "2001:df4::/32".parse().unwrap(),
+            "2001:df4:e141::/48".parse().unwrap(),
+        ]);
+        assert_eq!(
+            index.unannounced_fragments("2001:df4:e140::/46".parse().unwrap()),
+            vec![
+                "2001:df4:e140::/48".parse().unwrap(),
+                "2001:df4:e142::/47".parse().unwrap(),
+            ]
+        );
+    }
 }
