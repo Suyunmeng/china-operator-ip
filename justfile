@@ -154,6 +154,13 @@ guard:
               raise SystemExit(f"announced prefix classified by unannounced-only asset: {prefix}")
           if not row.get("origin_asn") and row.get("announced", True):
               raise SystemExit(f"missing origin ASN: {prefix}")
+          observed_origins = row.get("observed_origin_asn")
+          if not isinstance(observed_origins, list) or any(not isinstance(asn, int) or asn <= 0 for asn in observed_origins):
+              raise SystemExit(f"invalid observed Origin ASN evidence: {prefix}")
+          if observed_origins != sorted(set(observed_origins)):
+              raise SystemExit(f"unsorted or duplicate observed Origin ASN evidence: {prefix}")
+          if row.get("announced", True) and not observed_origins:
+              raise SystemExit(f"missing observed Origin ASN evidence: {prefix}")
           if not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
               if row.get("match_source") not in {"routing-origin-asn", "exclusive-immediate-upstream-asn"}:
                   raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
@@ -182,7 +189,7 @@ guard:
           source = row.get("match_source")
           if source == "routing-origin-asn":
               direct = set(routing.get("direct_origin_asn", []))
-              if not direct.intersection(row["origin_asn"]):
+              if not direct.intersection(row["observed_origin_asn"]):
                   raise SystemExit(f"routing origin provenance mismatch: {prefix}")
           elif source == "exclusive-immediate-upstream-asn":
               expected = sorted(set(routing.get("exclusive_immediate_upstream_asn", [])))

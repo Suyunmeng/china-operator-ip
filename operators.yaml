@@ -70,36 +70,20 @@ assets:
     type: cloud
     owner: Alibaba Cloud
     priority: 950
-    match:
-      whois_org:
-        - 'Alibaba|Aliyun|AliCloud|Hangzhou Alibaba'
-      org_id:
-        - 'ALIBABA|ALIYUN|ALICLOUD'
-      maintainer:
-        - 'MAINT-ALIBABA|MAINT-ALIYUN|ALIYUN-MNT'
-      netname:
-        - 'ALIBABA|ALIYUN|ALICLOUD'
-      country: [CN]
-    exclude:
-      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    require_domestic: false
+    routing:
+      direct_origin_asn: [37963]
+      exclusive_immediate_upstream_asn: [37963]
     outputs: [aliyuncn]
 
   tencentcn:
     type: cloud
     owner: Tencent Cloud
     priority: 945
-    match:
-      whois_org:
-        - 'Tencent|Shenzhen Tencent'
-      org_id:
-        - 'TENCENT'
-      maintainer:
-        - 'TENCENT'
-      netname:
-        - 'TENCENT|QCLOUD'
-      country: [CN]
-    exclude:
-      country: [HK, MO, TW, US, SG, JP, DE, GB, AU]
+    require_domestic: false
+    routing:
+      direct_origin_asn: [45090]
+      exclusive_immediate_upstream_asn: [45090]
     outputs: [tencentcn]
 
   volcanoenginecn:

@@ -28,8 +28,8 @@
 特别地：
 
 - AS4134、AS4809、AS9808、AS4837、AS9929 等出现在 AS Path 中间位置时仍不会使 Prefix 自动归属于对应运营商；它们仅可按 `settings.china.final_upstream_asn` 的单独聚合策略进入 `china*`，且必须存在符合最终上游限制的 Origin 路径。
-- Cloudflare 是唯一的路由特例：查询不限制 WHOIS 地区，也不限制 Organisation/Org ID/Maintainer/NetName；直接 Origin AS13335 的已广播 Prefix 可以归入 Cloudflare，其他 Origin 只有在所有可用观测都表明其即时上游 ASN 集合**恰好等于 `{13335}`** 时才归入 Cloudflare。只要存在其他即时上游、缺失/不可解析路径，或者 AS13335 仅出现在更深层 AS Path，就不会通过该特例。
-- Cloudflare 路由归属仍然只处理已广播 Prefix，且路由归属和普通 WHOIS Owner 归属会在元数据中的 `match_source` 区分。其他资产继续受 Prefix WHOIS 必须为 `CN`、Geo 不得明确指向海外的门槛约束。
+- Cloudflare、Alibaba Cloud 和 Tencent Cloud 使用路由专用规则：Cloudflare 查询不限制 WHOIS 地区，也不限制 Organisation/Org ID/Maintainer/NetName；直接 Origin AS13335 的已广播 Prefix 可以归入 Cloudflare，其他 Origin 只有在所有可用观测都表明其即时上游 ASN 集合**恰好等于 `{13335}`** 时才归入 Cloudflare。Alibaba Cloud 对应 AS37963，Tencent Cloud 对应 AS45090：直接观测到该 Origin ASN 的 Anycast Prefix 会纳入相应资产，否则其即时上游 ASN 集合必须恰好等于对应 ASN。
+- Cloudflare、Alibaba Cloud、Tencent Cloud 的路由归属仍然只处理已广播 Prefix，且路由归属和普通 WHOIS Owner 归属会在元数据中的 `match_source` 区分。其余资产继续受 Prefix WHOIS 必须为 `CN`、Geo 不得明确指向海外的门槛约束。
 - `china*`、普通资产列表和路由资产列表只包含 BGP 已广播的精确 IPv4/IPv6 Prefix；六个 WHOIS-only 云资产的专属列表仅保留未以相同或更具体 Prefix 边界在所采集 BGP RIB 中观测到的 RIR Prefix。程序不会从 RIR `/29`、`/32` 等分配块展开未广播的 `/48` 或 `/64`。
 - WHOIS Country 必须为 `CN`，且可选 Geo 辅助数据不能明确指向海外；否则 Prefix 不进入中国资产结果。
 - Geo 只提供 `country/subdivision/city` 位置和海外排除信号，不能确定 IP Owner。
@@ -85,6 +85,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
   "ip_version": 4,
   "asset": "example",
   "origin_asn": [64500],
+  "observed_origin_asn": [64500],
   "asn_path": [64496, 64500],
   "owner": "Example Network",
   "asset_type": "enterprise",
