@@ -251,7 +251,7 @@ fn origin_candidate(
         .match_
         .origin_asn
         .iter()
-        .any(|asn| observation.origin_asns.contains(asn));
+        .any(|asn| observation.observed_origin_asns.contains(asn));
     let asn_org_match = observation.origin_asns.iter().any(|asn| {
         asn_records.get(asn).is_some_and(|record| {
             matches_regex_text(&rule.compiled.asn_org, &record.searchable_text())
@@ -637,6 +637,39 @@ assets:
         .unwrap();
         assert_eq!(result.asset, "cloudflare");
         assert_eq!(result.match_source, "routing-origin-asn");
+    }
+
+    #[test]
+    fn observed_origin_matches_origin_rule_for_anycast() {
+        let yaml = r#"
+version: 1
+assets:
+  tencentcn:
+    type: cloud
+    owner: Tencent Cloud
+    priority: 1
+    match:
+      origin_asn: [45090]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
+        let mut observation = routing_observation(65000, &[64500], true);
+        observation.observed_origin_asns.insert(45090);
+        let whois = WhoisRecord {
+            country: Some("CN".to_string()),
+            ..WhoisRecord::default()
+        };
+        let result = classify(
+            &config,
+            Some(&observation),
+            Some(&whois),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.asset, "tencentcn");
+        assert_eq!(result.match_source, "origin-asn");
     }
 
     #[test]

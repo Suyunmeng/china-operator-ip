@@ -71,6 +71,7 @@ assets:
     owner: Alibaba Cloud
     priority: 950
     match:
+      origin_asn: [37963]
       whois_org:
         - 'Alibaba|Aliyun|AliCloud|Hangzhou Alibaba'
       org_id:
@@ -89,6 +90,7 @@ assets:
     owner: Tencent Cloud
     priority: 945
     match:
+      origin_asn: [45090]
       whois_org:
         - 'Tencent|Shenzhen Tencent'
       org_id:
