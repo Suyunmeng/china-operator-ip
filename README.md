@@ -27,7 +27,7 @@
 
 特别地：
 
-- AS4134、AS4809、AS9808、AS4837 等出现在 AS Path 中间位置时只是 Transit ASN，**不会**使 Prefix 自动归属于对应运营商。
+- AS4134、AS4809、AS9808、AS4837、AS9929 等出现在 AS Path 中间位置时仍不会使 Prefix 自动归属于对应运营商；它们仅可按 `settings.china.final_upstream_asn` 的单独聚合策略进入 `china*`，且必须满足全部观测路径的最终上游限制。
 - Cloudflare 是唯一的路由特例：查询不限制 WHOIS 地区，也不限制 Organisation/Org ID/Maintainer/NetName；直接 Origin AS13335 的已广播 Prefix 可以归入 Cloudflare，其他 Origin 只有在所有可用观测都表明其即时上游 ASN 集合**恰好等于 `{13335}`** 时才归入 Cloudflare。只要存在其他即时上游、缺失/不可解析路径，或者 AS13335 仅出现在更深层 AS Path，就不会通过该特例。
 - Cloudflare 路由归属仍然只处理已广播 Prefix，且路由归属和普通 WHOIS Owner 归属会在元数据中的 `match_source` 区分。其他资产继续受 Prefix WHOIS 必须为 `CN`、Geo 不得明确指向海外的门槛约束。
 - `china*`、普通资产列表和路由资产列表只包含 BGP 已广播的精确 IPv4/IPv6 Prefix；六个 WHOIS-only 云资产的专属列表仅保留未以相同或更具体 Prefix 边界在所采集 BGP RIB 中观测到的 RIR Prefix。程序不会从 RIR `/29`、`/32` 等分配块展开未广播的 `/48` 或 `/64`。
@@ -73,7 +73,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 
 - `prefix-owner.jsonl`：每个已分类 Prefix 的资产、所有者、类型、WHOIS、规则、置信度和位置。
 - `prefix-asn.jsonl`：分类使用的代表性 Origin ASN、所有采集器实际观测到的 `observed_origin_asn`、自动推导的 ASN Family、Peer 和采集器。
-- `prefix-path.jsonl`：代表性 AS Path，并明确分离 Origin、Transit、Peer ASN；`observed_immediate_upstream_asn` 和 `immediate_upstream_evidence_complete` 记录即时上游特例所依据的完整观测证据。
+- `prefix-path.jsonl`：代表性 AS Path，并明确分离 Origin、Transit、Peer ASN；`observed_immediate_upstream_asn` 和 `immediate_upstream_evidence_complete` 记录即时上游特例所依据的完整观测证据，`observed_final_upstream_asn` 记录满足 China 聚合最终上游策略的全部根 ASN。
 - `asn-family.json`：ASN Graph 自动发现结果、分数、深度和证据。
 - `manifest.json`：Schema 版本和输出清单。
 
@@ -92,6 +92,7 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
   "operator_family": null,
   "observed_immediate_upstream_asn": [64496],
   "immediate_upstream_evidence_complete": true,
+  "observed_final_upstream_asn": [4134],
   "whois_org": "Example Network",
   "org_id": "ORG-EXAMPLE",
   "maintainer": ["MAINT-EXAMPLE"],
@@ -124,11 +125,24 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 - `exclude.geo`（仅用于位置排除；`match.geo` 会被配置校验拒绝）
 - `match.asn_org`
 - 对称的 `exclude` 条件
-- `outputs`、`include_in_china`、`require_announced`、`exclude_announced`、`fallback`
+- `outputs`、`require_announced`、`exclude_announced`、`fallback`
+- `settings.china.assets`：明确进入 `china.txt`、`china6.txt`、`china46.txt` 的资产 ID
+- `settings.china.final_upstream_asn`：最终上游允许的 ASN 集合
 
 默认 `require_announced: true`，所以普通资产仍只能输出已在全球 BGP 中出现的 Prefix。仅允许 WHOIS Owner + `country` 的规则将 `require_announced: false` 作为非广播例外；设置 `exclude_announced: true` 时，该资产会从 WHOIS 登记 Prefix 中剔除在所采集 BGP RIB 中观测到的相同或更具体 Prefix，但不会因仅覆盖该登记段的上级聚合路由而排除它，且只能与 `require_announced: false` 一起使用。当前这类仅未广播例外包括 `bgpgdcn`、`ytnetcn`、`halocloudcn`、`owocloudcn`、`heptaskycn` 和 `sparkvmcn`，并且仍要求 WHOIS Country 为 `CN`。
 
 所有资产默认保持 `require_domestic: true`；Cloudflare 的路由特例可以显式设为 `require_domestic: false`，但必须是 routing-only 规则，不得混入 WHOIS/ASN Family/fallback 归属条件。
+
+`china*` 是单独的 BGP 聚合策略，不会改变任何资产的归属或其专属输出。它由 `operators.yaml` 中的以下配置完全定义：
+
+```yaml
+settings:
+  china:
+    assets: [cernet, cstnet, shixp, cnixp, chinanet, unicom, cmcc, aliyuncn, tencentcn, volcanoenginecn, ucloudcn, baiducn, drpeng, googlecn]
+    final_upstream_asn: [4134, 4809, 4837, 9929, 9808]
+```
+
+已分类为 `assets` 中任一资产的已广播 Prefix 会进入 `china*`。除此之外，程序对同一 Prefix 保留的每条有效 AS_PATH 从 Origin 向上回溯，穿过任意数量的下游 ASN，找到该路径上的第一个 `final_upstream_asn`。只有每条观测路径都能解析到允许集合中的最终上游时，该 Prefix 才会额外进入 `china*`；多宿主 Prefix 可以有多个最终上游，但它们必须全部来自允许集合。这种路径结论不会写入 `chinanet*`、`cmcc*`、`unicom*` 或其他资产专属列表。
 
 文本字段是大小写不敏感正则。配置启用 `deny_unknown_fields`，拼错字段会导致生成失败，而不是被静默忽略。
 

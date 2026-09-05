@@ -110,6 +110,11 @@ guard:
   result = Path("result")
   config = yaml.safe_load(Path("operators.yaml").read_text(encoding="utf-8"))
   metadata_files = config.get("settings", {}).get("metadata_files", {})
+  china = config.get("settings", {}).get("china", {})
+  china_assets = set(china.get("assets", []))
+  china_final_upstreams = set(china.get("final_upstream_asn", []))
+  if not china_assets or not china_final_upstreams:
+      raise SystemExit("settings.china must configure assets and final_upstream_asn")
   owner_file = metadata_files.get("owner", "prefix-owner.jsonl")
   asn_file = metadata_files.get("asn", "prefix-asn.jsonl")
   path_file = metadata_files.get("path", "prefix-path.jsonl")
@@ -160,6 +165,18 @@ guard:
           complete = row.get("immediate_upstream_evidence_complete")
           if not isinstance(complete, bool):
               raise SystemExit(f"missing immediate upstream evidence completeness: {prefix}")
+          final_upstreams = row.get("observed_final_upstream_asn")
+          if not isinstance(final_upstreams, list) or any(not isinstance(asn, int) or asn <= 0 for asn in final_upstreams):
+              raise SystemExit(f"invalid final upstream ASN evidence: {prefix}")
+          if final_upstreams != sorted(set(final_upstreams)):
+              raise SystemExit(f"unsorted or duplicate final upstream ASN evidence: {prefix}")
+          if not set(final_upstreams).issubset(china_final_upstreams):
+              raise SystemExit(f"final upstream outside configured China roots: {prefix}")
+          expected_china_membership = row.get("announced", True) and (
+              row["asset"] in china_assets or bool(final_upstreams)
+          )
+          if row.get("include_in_china") != expected_china_membership:
+              raise SystemExit(f"China aggregate provenance mismatch: {prefix}")
           rule = config["assets"].get(row["asset"], {})
           routing = rule.get("routing", {}) or {}
           source = row.get("match_source")
@@ -203,6 +220,8 @@ guard:
               raise SystemExit(f"owner/path upstream evidence mismatch: {prefix}")
           if row.get("immediate_upstream_evidence_complete") != metadata[prefix]["immediate_upstream_evidence_complete"]:
               raise SystemExit(f"owner/path evidence completeness mismatch: {prefix}")
+          if row.get("observed_final_upstream_asn") != metadata[prefix]["observed_final_upstream_asn"]:
+              raise SystemExit(f"owner/path final-upstream evidence mismatch: {prefix}")
           path_metadata[prefix] = row
   if set(path_metadata) != set(metadata):
       raise SystemExit(f"{path_file} does not cover exactly the owner metadata prefixes")

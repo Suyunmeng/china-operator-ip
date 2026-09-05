@@ -64,6 +64,7 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
     Ok(prefixes
         .into_iter()
         .map(|(prefix, aggregate)| {
+            let observed_asn_paths = valid_observed_paths(&aggregate.paths, &aggregate.origin_asns);
             let asn_path = select_representative_path(&aggregate.paths, &aggregate.origin_asns);
             let mut origin_asns = asn_path
                 .last()
@@ -98,6 +99,7 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
                     origin_asns,
                     observed_origin_asns: aggregate.origin_asns,
                     asn_path,
+                    observed_asn_paths,
                     transit_asns,
                     upstream_evidence,
                     peer_asns: aggregate.peers,
@@ -107,6 +109,17 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
             )
         })
         .collect())
+}
+
+fn valid_observed_paths(
+    paths: &BTreeMap<Vec<u32>, usize>,
+    origins: &BTreeSet<u32>,
+) -> BTreeSet<Vec<u32>> {
+    paths
+        .keys()
+        .filter(|path| path.last().is_some_and(|asn| origins.contains(asn)))
+        .cloned()
+        .collect()
 }
 
 fn select_representative_path(
@@ -176,6 +189,19 @@ fn collector_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retains_every_path_with_an_observed_origin() {
+        let paths = BTreeMap::from([
+            (vec![4134, 134773, 56040], 2),
+            (vec![9808, 56040], 1),
+            (vec![3356, 64500], 1),
+        ]);
+        assert_eq!(
+            valid_observed_paths(&paths, &BTreeSet::from([56040])),
+            BTreeSet::from([vec![4134, 134773, 56040], vec![9808, 56040]])
+        );
+    }
 
     #[test]
     fn most_observed_short_valid_path_wins() {

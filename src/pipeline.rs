@@ -145,6 +145,31 @@ fn v6_last_address(prefix: Ipv6Net) -> u128 {
     u128::from(prefix.network()) | (u128::MAX >> prefix.prefix_len())
 }
 
+fn final_upstream_asns(config: &Config, observation: &crate::model::BgpObservation) -> Vec<u32> {
+    let Some(china) = config.settings.china.as_ref() else {
+        return Vec::new();
+    };
+    if observation.observed_asn_paths.is_empty() {
+        return Vec::new();
+    }
+    let allowed: BTreeSet<_> = china.final_upstream_asn.iter().copied().collect();
+    observation
+        .observed_asn_paths
+        .iter()
+        .map(|path| path.iter().rev().find(|asn| allowed.contains(asn)).copied())
+        .collect::<Option<BTreeSet<_>>>()
+        .map(|upstreams| upstreams.into_iter().collect())
+        .unwrap_or_default()
+}
+
+fn is_configured_china_asset(config: &Config, asset: &str) -> bool {
+    config
+        .settings
+        .china
+        .as_ref()
+        .is_some_and(|china| china.assets.iter().any(|configured| configured == asset))
+}
+
 pub struct PipelineOptions {
     pub rule_file: PathBuf,
     pub mrt_files: Vec<PathBuf>,
@@ -195,10 +220,9 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
             rejected_unclassified += 1;
             continue;
         };
-        let include_in_china = config
-            .assets
-            .get(&classification.asset)
-            .is_some_and(|rule| rule.include_in_china);
+        let observed_final_upstream_asn = final_upstream_asns(&config, observation);
+        let include_in_china = is_configured_china_asset(&config, &classification.asset)
+            || !observed_final_upstream_asn.is_empty();
         let family_names: Vec<_> = observation
             .origin_asns
             .iter()
@@ -232,6 +256,7 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                 operator_family: classification.operator_family.clone(),
                 observed_immediate_upstream_asn: observed_immediate_upstream_asn.clone(),
                 immediate_upstream_evidence_complete,
+                observed_final_upstream_asn: observed_final_upstream_asn.clone(),
                 whois_org: owner_record.whois_org.clone(),
                 org_id: owner_record.org_id.clone(),
                 maintainer: owner_record.maintainers.clone(),
@@ -260,6 +285,7 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                 transit_asn: observation.transit_asns.iter().copied().collect(),
                 observed_immediate_upstream_asn,
                 immediate_upstream_evidence_complete,
+                observed_final_upstream_asn,
                 peer_asn: observation.peer_asns.iter().copied().collect(),
                 collectors: observation.collectors.iter().cloned().collect(),
                 last_seen: observation.last_seen,
@@ -305,10 +331,11 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                     asn_path: Vec::new(),
                     owner: classification.owner.clone(),
                     asset_type: classification.asset_type.clone(),
-                    include_in_china: rule.include_in_china,
+                    include_in_china: false,
                     operator_family: classification.operator_family.clone(),
                     observed_immediate_upstream_asn: Vec::new(),
                     immediate_upstream_evidence_complete: false,
+                    observed_final_upstream_asn: Vec::new(),
                     whois_org: record.whois_org.clone(),
                     org_id: record.org_id.clone(),
                     maintainer: record.maintainers.clone(),
@@ -337,6 +364,7 @@ pub fn run(options: PipelineOptions) -> Result<PipelineSummary> {
                     transit_asn: Vec::new(),
                     observed_immediate_upstream_asn: Vec::new(),
                     immediate_upstream_evidence_complete: false,
+                    observed_final_upstream_asn: Vec::new(),
                     peer_asn: Vec::new(),
                     collectors: Vec::new(),
                     last_seen: 0,
@@ -373,6 +401,79 @@ pub struct PipelineSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn china_config() -> Config {
+        let yaml = r#"
+version: 1
+settings:
+  china:
+    assets: [configured]
+    final_upstream_asn: [4134, 4809, 4837, 9929, 9808]
+assets:
+  configured:
+    type: carrier
+    owner: Configured Carrier
+    priority: 2
+    match:
+      origin_asn: [64500]
+  other:
+    type: enterprise
+    owner: Other Network
+    priority: 1
+    match:
+      origin_asn: [56040]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        config.validate_and_compile().unwrap();
+        config
+    }
+
+    fn observation(paths: impl IntoIterator<Item = Vec<u32>>) -> crate::model::BgpObservation {
+        let observed_asn_paths: BTreeSet<_> = paths.into_iter().collect();
+        let asn_path = observed_asn_paths.first().cloned().unwrap_or_default();
+        crate::model::BgpObservation {
+            prefix: "203.0.113.0/24".parse().unwrap(),
+            origin_asns: BTreeSet::from([56040]),
+            observed_origin_asns: BTreeSet::from([56040]),
+            asn_path,
+            observed_asn_paths,
+            transit_asns: BTreeSet::new(),
+            upstream_evidence: BTreeMap::new(),
+            peer_asns: BTreeSet::new(),
+            collectors: BTreeSet::new(),
+            last_seen: 1,
+        }
+    }
+
+    #[test]
+    fn configured_asset_is_included_in_china() {
+        assert!(is_configured_china_asset(&china_config(), "configured"));
+        assert!(!is_configured_china_asset(&china_config(), "other"));
+    }
+
+    #[test]
+    fn recursive_final_upstream_is_included_in_china() {
+        let observation = observation([vec![4134, 134773, 56040]]);
+        assert_eq!(
+            final_upstream_asns(&china_config(), &observation),
+            vec![4134]
+        );
+    }
+
+    #[test]
+    fn multiple_allowed_final_upstreams_are_included_in_china() {
+        let observation = observation([vec![4134, 134773, 56040], vec![9808, 56040]]);
+        assert_eq!(
+            final_upstream_asns(&china_config(), &observation),
+            vec![4134, 9808]
+        );
+    }
+
+    #[test]
+    fn non_allowlisted_final_upstream_excludes_prefix_from_china() {
+        let observation = observation([vec![4134, 134773, 56040], vec![3356, 56040]]);
+        assert!(final_upstream_asns(&china_config(), &observation).is_empty());
+    }
 
     #[test]
     fn unannounced_fragments_remove_announced_subprefixes_only() {

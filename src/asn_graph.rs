@@ -201,6 +201,7 @@ mod tests {
             origin_asns: BTreeSet::from([65000]),
             observed_origin_asns: BTreeSet::from([65000]),
             asn_path: vec![64500, 65000],
+            observed_asn_paths: BTreeSet::from([vec![64500, 65000]]),
             transit_asns: BTreeSet::from([64500]),
             upstream_evidence: BTreeMap::from([(
                 65000,

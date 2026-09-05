@@ -4,6 +4,23 @@ settings:
   domestic_country: CN
   min_asn_family_score: 70
   max_asn_family_depth: 2
+  china:
+    assets:
+      - cernet
+      - cstnet
+      - shixp
+      - cnixp
+      - chinanet
+      - unicom
+      - cmcc
+      - aliyuncn
+      - tencentcn
+      - volcanoenginecn
+      - ucloudcn
+      - baiducn
+      - drpeng
+      - googlecn
+    final_upstream_asn: [4134, 4809, 4837, 9929, 9808]
   metadata_files:
     owner: prefix-owner.jsonl
     asn: prefix-asn.jsonl
@@ -219,7 +236,6 @@ assets:
     owner: Cloudflare
     priority: 920
     require_domestic: false
-    include_in_china: false
     routing:
       direct_origin_asn: [13335]
       exclusive_immediate_upstream_asn: [13335]

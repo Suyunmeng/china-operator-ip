@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fs::File, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs::File,
+    path::Path,
+};
 
 use anyhow::{Context, Result, bail};
 use regex::Regex;
@@ -21,6 +25,14 @@ pub struct Settings {
     pub min_asn_family_score: u16,
     pub max_asn_family_depth: u8,
     pub metadata_files: MetadataFiles,
+    pub china: Option<ChinaAggregateSettings>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChinaAggregateSettings {
+    pub assets: Vec<String>,
+    pub final_upstream_asn: Vec<u32>,
 }
 
 impl Default for Settings {
@@ -30,6 +42,7 @@ impl Default for Settings {
             min_asn_family_score: 70,
             max_asn_family_depth: 2,
             metadata_files: MetadataFiles::default(),
+            china: None,
         }
     }
 }
@@ -73,8 +86,6 @@ pub struct AssetRule {
     pub exclude: MatchConditions,
     #[serde(default)]
     pub outputs: Vec<String>,
-    #[serde(default = "default_true")]
-    pub include_in_china: bool,
     #[serde(default = "default_true")]
     pub require_domestic: bool,
     #[serde(default = "default_true")]
@@ -217,6 +228,8 @@ impl Config {
             }
         }
 
+        validate_china_aggregate(self.settings.china.as_ref(), &self.assets)?;
+
         for (id, rule) in &mut self.assets {
             if !rule.require_domestic {
                 if rule.routing.is_none() {
@@ -298,6 +311,38 @@ impl Config {
         validate_root_ownership(&self.assets)?;
         Ok(())
     }
+}
+
+fn validate_china_aggregate(
+    china: Option<&ChinaAggregateSettings>,
+    assets: &BTreeMap<String, AssetRule>,
+) -> Result<()> {
+    let Some(china) = china else {
+        return Ok(());
+    };
+    if china.assets.is_empty() {
+        bail!("settings.china.assets must not be empty");
+    }
+    if china.final_upstream_asn.is_empty() {
+        bail!("settings.china.final_upstream_asn must not be empty");
+    }
+    let configured_assets: BTreeSet<_> = china.assets.iter().collect();
+    if configured_assets.len() != china.assets.len() {
+        bail!("settings.china.assets contains duplicate asset IDs");
+    }
+    for asset in &china.assets {
+        if !assets.contains_key(asset) {
+            bail!("settings.china.assets references unknown asset {asset}");
+        }
+    }
+    let upstreams: BTreeSet<_> = china.final_upstream_asn.iter().collect();
+    if upstreams.len() != china.final_upstream_asn.len() {
+        bail!("settings.china.final_upstream_asn contains duplicate ASNs");
+    }
+    if upstreams.contains(&&0) {
+        bail!("settings.china.final_upstream_asn contains invalid AS0");
+    }
+    Ok(())
 }
 
 fn validate_routing(id: &str, rule: &AssetRule) -> Result<()> {
@@ -727,6 +772,37 @@ assets:
       origin_asn: [64501]
 "#;
         let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn china_aggregate_requires_known_unique_assets_and_upstreams() {
+        let valid = r#"
+version: 1
+settings:
+  china:
+    assets: [carrier]
+    final_upstream_asn: [4134]
+assets:
+  carrier:
+    type: carrier
+    owner: Carrier
+    priority: 1
+    match:
+      origin_asn: [4134]
+"#;
+        let mut config: Config = serde_yaml::from_str(valid).unwrap();
+        config.validate_and_compile().unwrap();
+
+        let unknown_asset = valid.replace("assets: [carrier]", "assets: [missing]");
+        let mut config: Config = serde_yaml::from_str(&unknown_asset).unwrap();
+        assert!(config.validate_and_compile().is_err());
+
+        let duplicate_upstream = valid.replace(
+            "final_upstream_asn: [4134]",
+            "final_upstream_asn: [4134, 4134]",
+        );
+        let mut config: Config = serde_yaml::from_str(&duplicate_upstream).unwrap();
         assert!(config.validate_and_compile().is_err());
     }
 

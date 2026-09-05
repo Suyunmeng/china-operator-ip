@@ -141,7 +141,7 @@ fn write_manifest(dir: &Path, classified: usize) -> Result<()> {
     write_json(
         &dir.join("manifest.json"),
         &serde_json::json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "classified_prefixes": classified,
             "files": files,
         }),
@@ -185,6 +185,7 @@ assets:
             operator_family: None,
             observed_immediate_upstream_asn: Vec::new(),
             immediate_upstream_evidence_complete: false,
+            observed_final_upstream_asn: Vec::new(),
             whois_org: Some("Cloud".to_string()),
             org_id: None,
             maintainer: Vec::new(),
@@ -213,6 +214,7 @@ assets:
             transit_asn: Vec::new(),
             observed_immediate_upstream_asn: Vec::new(),
             immediate_upstream_evidence_complete: false,
+            observed_final_upstream_asn: Vec::new(),
             peer_asn: Vec::new(),
             collectors: Vec::new(),
             last_seen: 0,
@@ -258,7 +260,7 @@ assets:
             (
                 PrefixMetadata {
                     prefix: prefix.parse().unwrap(),
-                    ip_version: 4,
+                    ip_version: if prefix.contains(':') { 6 } else { 4 },
                     asset: asset.to_string(),
                     origin_asn: vec![64500],
                     asn_path: vec![64500],
@@ -269,6 +271,7 @@ assets:
                     operator_family: None,
                     observed_immediate_upstream_asn: Vec::new(),
                     immediate_upstream_evidence_complete: false,
+                    observed_final_upstream_asn: Vec::new(),
                     whois_org: Some(asset.to_string()),
                     org_id: None,
                     maintainer: Vec::new(),
@@ -297,6 +300,7 @@ assets:
                     transit_asn: Vec::new(),
                     observed_immediate_upstream_asn: Vec::new(),
                     immediate_upstream_evidence_complete: false,
+                    observed_final_upstream_asn: Vec::new(),
                     peer_asn: Vec::new(),
                     collectors: Vec::new(),
                     last_seen: 1,
@@ -306,6 +310,7 @@ assets:
         let classified = vec![
             record("203.0.113.0/24", "first"),
             record("198.51.100.0/24", "second"),
+            record("2001:db8::/32", "first"),
         ];
         let directory = tempfile::tempdir().unwrap();
         let output = directory.path().join("result");
@@ -313,5 +318,16 @@ assets:
         let list = fs::read_to_string(output.join("ixp.txt")).unwrap();
         assert!(list.contains("198.51.100.0/24"));
         assert!(list.contains("203.0.113.0/24"));
+        let china = fs::read_to_string(output.join("china.txt")).unwrap();
+        assert!(china.contains("198.51.100.0/24"));
+        assert!(china.contains("203.0.113.0/24"));
+        assert_eq!(
+            fs::read_to_string(output.join("china6.txt")).unwrap(),
+            "2001:db8::/32\n"
+        );
+        let china46 = fs::read_to_string(output.join("china46.txt")).unwrap();
+        assert!(china46.contains("198.51.100.0/24"));
+        assert!(china46.contains("203.0.113.0/24"));
+        assert!(china46.contains("2001:db8::/32"));
     }
 }
