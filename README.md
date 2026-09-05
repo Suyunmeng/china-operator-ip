@@ -27,7 +27,7 @@
 
 特别地：
 
-- AS4134、AS4809、AS9808、AS4837、AS9929 等出现在 AS Path 中间位置时仍不会使 Prefix 自动归属于对应运营商；它们仅可按 `settings.china.final_upstream_asn` 的单独聚合策略进入 `china*`，且必须满足全部观测路径的最终上游限制。
+- AS4134、AS4809、AS9808、AS4837、AS9929 等出现在 AS Path 中间位置时仍不会使 Prefix 自动归属于对应运营商；它们仅可按 `settings.china.final_upstream_asn` 的单独聚合策略进入 `china*`，且必须存在符合最终上游限制的 Origin 路径。
 - Cloudflare 是唯一的路由特例：查询不限制 WHOIS 地区，也不限制 Organisation/Org ID/Maintainer/NetName；直接 Origin AS13335 的已广播 Prefix 可以归入 Cloudflare，其他 Origin 只有在所有可用观测都表明其即时上游 ASN 集合**恰好等于 `{13335}`** 时才归入 Cloudflare。只要存在其他即时上游、缺失/不可解析路径，或者 AS13335 仅出现在更深层 AS Path，就不会通过该特例。
 - Cloudflare 路由归属仍然只处理已广播 Prefix，且路由归属和普通 WHOIS Owner 归属会在元数据中的 `match_source` 区分。其他资产继续受 Prefix WHOIS 必须为 `CN`、Geo 不得明确指向海外的门槛约束。
 - `china*`、普通资产列表和路由资产列表只包含 BGP 已广播的精确 IPv4/IPv6 Prefix；六个 WHOIS-only 云资产的专属列表仅保留未以相同或更具体 Prefix 边界在所采集 BGP RIB 中观测到的 RIR Prefix。程序不会从 RIR `/29`、`/32` 等分配块展开未广播的 `/48` 或 `/64`。
@@ -142,7 +142,7 @@ settings:
     final_upstream_asn: [4134, 4809, 4837, 9929, 9808]
 ```
 
-已分类为 `assets` 中任一资产的已广播 Prefix 会进入 `china*`。除此之外，程序对同一 Prefix 保留的每条有效 AS_PATH 从 Origin 向上回溯，穿过任意数量的下游 ASN，找到该路径上的第一个 `final_upstream_asn`。只有每条观测路径都能解析到允许集合中的最终上游时，该 Prefix 才会额外进入 `china*`；多宿主 Prefix 可以有多个最终上游，但它们必须全部来自允许集合。这种路径结论不会写入 `chinanet*`、`cmcc*`、`unicom*` 或其他资产专属列表。
+已分类为 `assets` 中任一资产的已广播 Prefix 会进入 `china*`。除此之外，程序将同一 Prefix 的有效 AS_PATH 按 Origin ASN 分组；对每个 Origin 的每条路径，从 Origin 向上回溯、穿过任意数量的下游 ASN，并寻找第一个 `final_upstream_asn`。只要任一 Origin 存在一条路径解析到允许集合中的最终上游，该 Prefix 就会额外进入 `china*`。因此同时由境内外 Origin 广播的 Anycast Prefix，只要存在符合条件的境内 Origin 路径，也会保留；`observed_final_upstream_asn` 会记录所有实际命中的允许根 ASN。这种路径结论不会写入 `chinanet*`、`cmcc*`、`unicom*` 或其他资产专属列表。
 
 文本字段是大小写不敏感正则。配置启用 `deny_unknown_fields`，拼错字段会导致生成失败，而不是被静默忽略。
 

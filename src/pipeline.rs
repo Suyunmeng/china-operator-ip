@@ -153,13 +153,17 @@ fn final_upstream_asns(config: &Config, observation: &crate::model::BgpObservati
         return Vec::new();
     }
     let allowed: BTreeSet<_> = china.final_upstream_asn.iter().copied().collect();
-    observation
-        .observed_asn_paths
-        .iter()
-        .map(|path| path.iter().rev().find(|asn| allowed.contains(asn)).copied())
-        .collect::<Option<BTreeSet<_>>>()
-        .map(|upstreams| upstreams.into_iter().collect())
-        .unwrap_or_default()
+    let mut upstreams_by_origin: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+    for path in &observation.observed_asn_paths {
+        let origin = *path.last().expect("observed path has an Origin ASN");
+        if let Some(upstream) = path.iter().rev().find(|asn| allowed.contains(asn)).copied() {
+            upstreams_by_origin
+                .entry(origin)
+                .or_default()
+                .insert(upstream);
+        }
+    }
+    upstreams_by_origin.into_values().flatten().collect()
 }
 
 fn is_configured_china_asset(config: &Config, asset: &str) -> bool {
@@ -470,8 +474,17 @@ assets:
     }
 
     #[test]
-    fn non_allowlisted_final_upstream_excludes_prefix_from_china() {
-        let observation = observation([vec![4134, 134773, 56040], vec![3356, 56040]]);
+    fn anycast_prefix_is_included_when_one_origin_has_an_allowed_path() {
+        let observation = observation([vec![4134, 134773, 56040], vec![3356, 56041]]);
+        assert_eq!(
+            final_upstream_asns(&china_config(), &observation),
+            vec![4134]
+        );
+    }
+
+    #[test]
+    fn non_allowlisted_final_upstreams_exclude_prefix_from_china() {
+        let observation = observation([vec![3356, 56040], vec![1299, 56041]]);
         assert!(final_upstream_asns(&china_config(), &observation).is_empty());
     }
 
