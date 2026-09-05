@@ -1,5 +1,5 @@
 {
-  "classified_prefixes": 108682,
+  "classified_prefixes": 107116,
   "files": [
     "cstnet46.txt",
     "ytnetcn46.txt",
@@ -72,5 +72,5 @@
     "china46.txt",
     "heptaskycn6.txt"
   ],
-  "schema_version": 3
+  "schema_version": 4
 }
