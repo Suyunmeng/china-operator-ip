@@ -1,6 +1,6 @@
 set unstable
 
-collectors := "rrc00 rrc12 rrc21 route-views2 route-views6"
+collectors := "rrc00 rrc12 rrc21 rrc24 rrc25 route-views2 route-views6"
 
 whois_urls := "https://ftp.apnic.net/apnic/whois/apnic.db.inetnum.gz https://ftp.apnic.net/apnic/whois/apnic.db.inet6num.gz https://ftp.apnic.net/apnic/whois/apnic.db.aut-num.gz https://ftp.apnic.net/apnic/whois/apnic.db.organisation.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.inetnum.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.inet6num.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.aut-num.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.organisation.gz https://ftp.arin.net/pub/rr/arin.db.gz https://ftp.lacnic.net/lacnic/dbase/lacnic.db.gz https://ftp.afrinic.net/dbase/afrinic.db.gz"
 
@@ -43,7 +43,7 @@ prepare_rib collector:
 
 # Download all configured BGP snapshots.
 [parallel]
-prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc12") (prepare_rib "rrc21") (prepare_rib "route-views2") (prepare_rib "route-views6")
+prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc12") (prepare_rib "rrc21") (prepare_rib "rrc24") (prepare_rib "rrc25") (prepare_rib "route-views2") (prepare_rib "route-views6")
 
 # Download one authoritative RIR WHOIS bulk snapshot.
 prepare_whois_file url:

@@ -269,6 +269,16 @@ mod tests {
     }
 
     #[test]
+    fn usable_path_accepts_baidu_secondary_origin_path() {
+        assert_eq!(
+            usable_path(
+                &BTreeSet::from([38365]),
+                Some(vec![46997, 38008, 38008, 10099, 4837, 38365]),
+            ),
+            Some(vec![46997, 38008, 38008, 10099, 4837, 38365])
+        );
+    }
+    #[test]
     fn low_peer_visibility_is_not_an_announcement() {
         assert!(!has_minimum_peer_visibility(&BTreeSet::from([55720]), 10));
         assert!(has_minimum_peer_visibility(
