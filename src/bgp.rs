@@ -45,9 +45,6 @@ pub fn load_ribs(
                 continue;
             }
             let prefix = elem.prefix.prefix;
-            if retain_announced_prefixes {
-                announced_prefixes.insert(prefix);
-            }
             let Some(origins) = elem.origin_asns.as_deref() else {
                 continue;
             };
@@ -55,19 +52,26 @@ pub fn load_ribs(
                 continue;
             }
             let origins: BTreeSet<u32> = origins.iter().copied().map(u32::from).collect();
-            let path_asns = elem
-                .as_path
-                .as_ref()
-                .and_then(|path| path.to_u32_vec_opt(true));
+            let Some(path_asns) = usable_path(
+                &origins,
+                elem.as_path
+                    .as_ref()
+                    .and_then(|path| path.to_u32_vec_opt(true)),
+            ) else {
+                continue;
+            };
+            if retain_announced_prefixes {
+                announced_prefixes.insert(prefix);
+            }
+            let origins =
+                BTreeSet::from([*path_asns.last().expect("usable path has an Origin ASN")]);
             if shard.is_some_and(|(index, count)| prefix_hash(prefix, count) != index) {
                 continue;
             }
             let aggregate = prefixes.entry(prefix).or_default();
             aggregate.origin_asns.extend(origins.iter().copied());
-            if let Some(path_asns) = path_asns.as_ref() {
-                *aggregate.paths.entry(path_asns.clone()).or_default() += 1;
-            }
-            record_upstream_evidence(aggregate, path_asns.as_deref(), &origins);
+            *aggregate.paths.entry(path_asns.clone()).or_default() += 1;
+            record_upstream_evidence(aggregate, Some(&path_asns), &origins);
             aggregate.peers.insert(u32::from(elem.peer_asn));
             aggregate.collectors.insert(collector.clone());
             aggregate.last_seen = aggregate.last_seen.max(elem.timestamp.floor() as i64);
@@ -83,14 +87,11 @@ pub fn load_ribs(
                 &aggregate.origin_asns,
                 allowed_final_upstream_asns,
             );
-            let mut origin_asns = asn_path
+            let origin_asns = asn_path
                 .last()
                 .copied()
                 .into_iter()
                 .collect::<BTreeSet<_>>();
-            if origin_asns.is_empty() && aggregate.origin_asns.len() == 1 {
-                origin_asns.extend(aggregate.origin_asns.iter().copied());
-            }
             let transit_asns = asn_path
                 .iter()
                 .copied()
@@ -141,6 +142,15 @@ fn prefix_hash(prefix: IpNet, count: u32) -> u32 {
             ((value ^ (value >> 64)) as u32) % count
         }
     }
+}
+
+fn usable_path(origins: &BTreeSet<u32>, path: Option<Vec<u32>>) -> Option<Vec<u32>> {
+    let path = path?;
+    let origin = *path.last()?;
+    if !origins.contains(&origin) {
+        return None;
+    }
+    immediate_upstream(&path, &BTreeSet::from([origin])).map(|_| path)
 }
 
 fn final_upstream_asns(
@@ -222,6 +232,27 @@ fn collector_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usable_path_rejects_incomplete_or_unverifiable_paths() {
+        let origins = BTreeSet::from([38229]);
+        assert_eq!(
+            usable_path(&origins, Some(vec![4134, 38229])),
+            Some(vec![4134, 38229])
+        );
+        assert_eq!(usable_path(&origins, None), None);
+        assert_eq!(usable_path(&origins, Some(Vec::new())), None);
+        assert_eq!(usable_path(&origins, Some(vec![38229])), None);
+        assert_eq!(
+            usable_path(&origins, Some(vec![4134, 38229, 38229])),
+            Some(vec![4134, 38229, 38229])
+        );
+        assert_eq!(usable_path(&origins, Some(vec![4134, 64500])), None);
+        assert_eq!(
+            usable_path(&BTreeSet::from([38229, 64500]), Some(vec![4134, 38229])),
+            Some(vec![4134, 38229])
+        );
+    }
 
     #[test]
     fn retains_final_roots_for_every_path_with_an_observed_origin() {
