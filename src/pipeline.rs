@@ -186,8 +186,13 @@ pub fn run(mrt_files: &[PathBuf], options: PipelineOptions) -> Result<PipelineSu
         .as_ref()
         .map(|china| china.final_upstream_asn.iter().copied().collect())
         .unwrap_or_default();
-    let (observations, announced_prefixes) =
-        load_ribs(mrt_files, &allowed_final_upstream_asns, None, true)?;
+    let (observations, announced_prefixes) = load_ribs(
+        mrt_files,
+        &allowed_final_upstream_asns,
+        config.settings.min_bgp_peers,
+        None,
+        true,
+    )?;
     generate(&config, &options, observations, announced_prefixes)
 }
 
@@ -202,6 +207,7 @@ pub fn extract_bgp(options: ExtractBgpOptions) -> Result<()> {
     let (observations, announced_prefixes) = load_ribs(
         &options.mrt_files,
         &allowed_final_upstream_asns,
+        config.settings.min_bgp_peers,
         Some(options.shard),
         options.shard.0 == 0,
     )?;

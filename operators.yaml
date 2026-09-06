@@ -4,6 +4,7 @@ settings:
   domestic_country: CN
   min_asn_family_score: 70
   max_asn_family_depth: 2
+  min_bgp_peers: 10
   china:
     assets:
       - cernet

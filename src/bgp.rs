@@ -29,11 +29,12 @@ struct OriginEvidenceAggregate {
 pub fn load_ribs(
     paths: &[PathBuf],
     allowed_final_upstream_asns: &BTreeSet<u32>,
+    min_bgp_peers: usize,
     shard: Option<(u32, u32)>,
     retain_announced_prefixes: bool,
 ) -> Result<(BTreeMap<IpNet, BgpObservation>, BTreeSet<IpNet>)> {
     let mut prefixes: BTreeMap<IpNet, Aggregate> = BTreeMap::new();
-    let mut announced_prefixes = BTreeSet::new();
+    let mut announced_peers: BTreeMap<IpNet, BTreeSet<u32>> = BTreeMap::new();
 
     for path in paths {
         let collector = collector_name(path);
@@ -61,7 +62,10 @@ pub fn load_ribs(
                 continue;
             };
             if retain_announced_prefixes {
-                announced_prefixes.insert(prefix);
+                announced_peers
+                    .entry(prefix)
+                    .or_default()
+                    .insert(u32::from(elem.peer_asn));
             }
             let origins =
                 BTreeSet::from([*path_asns.last().expect("usable path has an Origin ASN")]);
@@ -80,6 +84,7 @@ pub fn load_ribs(
 
     let observations = prefixes
         .into_iter()
+        .filter(|(_, aggregate)| has_minimum_peer_visibility(&aggregate.peers, min_bgp_peers))
         .map(|(prefix, aggregate)| {
             let asn_path = select_representative_path(&aggregate.paths, &aggregate.origin_asns);
             let observed_final_upstream_asns = final_upstream_asns(
@@ -127,7 +132,16 @@ pub fn load_ribs(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let announced_prefixes = announced_peers
+        .into_iter()
+        .filter(|(_, peers)| has_minimum_peer_visibility(peers, min_bgp_peers))
+        .map(|(prefix, _)| prefix)
+        .collect();
     Ok((observations, announced_prefixes))
+}
+
+fn has_minimum_peer_visibility(peers: &BTreeSet<u32>, min_bgp_peers: usize) -> bool {
+    peers.len() >= min_bgp_peers
 }
 
 pub fn belongs_to_shard(prefix: IpNet, shard: Option<(u32, u32)>) -> bool {
@@ -252,6 +266,15 @@ mod tests {
             usable_path(&BTreeSet::from([38229, 64500]), Some(vec![4134, 38229])),
             Some(vec![4134, 38229])
         );
+    }
+
+    #[test]
+    fn low_peer_visibility_is_not_an_announcement() {
+        assert!(!has_minimum_peer_visibility(&BTreeSet::from([55720]), 10));
+        assert!(has_minimum_peer_visibility(
+            &(1..=10).collect::<BTreeSet<_>>(),
+            10
+        ));
     }
 
     #[test]

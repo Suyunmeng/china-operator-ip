@@ -24,6 +24,7 @@ pub struct Settings {
     pub domestic_country: String,
     pub min_asn_family_score: u16,
     pub max_asn_family_depth: u8,
+    pub min_bgp_peers: usize,
     pub metadata_files: MetadataFiles,
     pub china: Option<ChinaAggregateSettings>,
 }
@@ -41,6 +42,7 @@ impl Default for Settings {
             domestic_country: "CN".to_string(),
             min_asn_family_score: 70,
             max_asn_family_depth: 2,
+            min_bgp_peers: 10,
             metadata_files: MetadataFiles::default(),
             china: None,
         }
@@ -207,6 +209,9 @@ impl Config {
             bail!("settings.domestic_country must be an ISO alpha-2 code");
         }
         self.settings.domestic_country.make_ascii_uppercase();
+        if self.settings.min_bgp_peers == 0 {
+            bail!("settings.min_bgp_peers must be greater than zero");
+        }
         let fallback_count = self.assets.values().filter(|rule| rule.fallback).count();
         if fallback_count > 1 {
             bail!("only one fallback asset is allowed");
