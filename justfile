@@ -110,7 +110,11 @@ extract_bgp shard_index shard_count: build
   ribs=()
   if [[ -n "${BGP_COLLECTORS:-}" ]]; then
     for collector in ${BGP_COLLECTORS}; do
-      matches=(data/bgp/rib-"${collector}".gz data/bgp/rib-"${collector}".bz2)
+      matches=()
+      for suffix in gz bz2; do
+        file="data/bgp/rib-${collector}.${suffix}"
+        [[ -f "${file}" ]] && matches+=("${file}")
+      done
       ((${#matches[@]} > 0)) || { echo "No BGP RIB file for ${collector}" >&2; exit 1; }
       ribs+=("${matches[@]}")
     done
