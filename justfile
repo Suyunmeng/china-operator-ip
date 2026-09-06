@@ -171,6 +171,14 @@ guard:
   china_v4 = set()
   china_v6 = set()
   metadata = {}
+  asn_metadata = {}
+  with (result / asn_file).open(encoding="utf-8") as stream:
+      for line_number, line in enumerate(stream, 1):
+          row = json.loads(line)
+          prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
+          if prefix in asn_metadata:
+              raise SystemExit(f"duplicate ASN metadata prefix: {prefix}")
+          asn_metadata[prefix] = row
   with (result / owner_file).open(encoding="utf-8") as stream:
       for line_number, line in enumerate(stream, 1):
           row = json.loads(line)
@@ -214,7 +222,8 @@ guard:
           source = row.get("match_source")
           if source == "routing-origin-asn":
               direct = set(routing.get("direct_origin_asn", []))
-              if not direct.intersection(row["origin_asn"]):
+              observed_origins = set(asn_metadata.get(prefix, {}).get("observed_origin_asn", []))
+              if not direct.intersection(observed_origins):
                   raise SystemExit(f"routing origin provenance mismatch: {prefix}")
           elif source == "exclusive-immediate-upstream-asn":
               expected = sorted(set(routing.get("exclusive_immediate_upstream_asn", [])))

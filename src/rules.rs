@@ -154,7 +154,7 @@ fn routing_candidate(
 ) -> Option<Candidate> {
     let routing = rule.routing.as_ref()?;
     if observation
-        .origin_asns
+        .observed_origin_asns
         .iter()
         .any(|origin| routing.direct_origin_asn.contains(origin))
     {
