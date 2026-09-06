@@ -7,3 +7,4 @@ pub mod output;
 pub mod pipeline;
 pub mod rpsl;
 pub mod rules;
+pub mod shard;

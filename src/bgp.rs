@@ -26,8 +26,14 @@ struct OriginEvidenceAggregate {
     unusable_observation: bool,
 }
 
-pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
+pub fn load_ribs(
+    paths: &[PathBuf],
+    allowed_final_upstream_asns: &BTreeSet<u32>,
+    shard: Option<(u32, u32)>,
+    retain_announced_prefixes: bool,
+) -> Result<(BTreeMap<IpNet, BgpObservation>, BTreeSet<IpNet>)> {
     let mut prefixes: BTreeMap<IpNet, Aggregate> = BTreeMap::new();
+    let mut announced_prefixes = BTreeSet::new();
 
     for path in paths {
         let collector = collector_name(path);
@@ -37,6 +43,10 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
         for elem in parser.into_elem_iter() {
             if !elem.is_announcement() {
                 continue;
+            }
+            let prefix = elem.prefix.prefix;
+            if retain_announced_prefixes {
+                announced_prefixes.insert(prefix);
             }
             let Some(origins) = elem.origin_asns.as_deref() else {
                 continue;
@@ -49,7 +59,10 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
                 .as_path
                 .as_ref()
                 .and_then(|path| path.to_u32_vec_opt(true));
-            let aggregate = prefixes.entry(elem.prefix.prefix).or_default();
+            if shard.is_some_and(|(index, count)| prefix_hash(prefix, count) != index) {
+                continue;
+            }
+            let aggregate = prefixes.entry(prefix).or_default();
             aggregate.origin_asns.extend(origins.iter().copied());
             if let Some(path_asns) = path_asns.as_ref() {
                 *aggregate.paths.entry(path_asns.clone()).or_default() += 1;
@@ -61,11 +74,15 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
         }
     }
 
-    Ok(prefixes
+    let observations = prefixes
         .into_iter()
         .map(|(prefix, aggregate)| {
-            let observed_asn_paths = valid_observed_paths(&aggregate.paths, &aggregate.origin_asns);
             let asn_path = select_representative_path(&aggregate.paths, &aggregate.origin_asns);
+            let observed_final_upstream_asns = final_upstream_asns(
+                &aggregate.paths,
+                &aggregate.origin_asns,
+                allowed_final_upstream_asns,
+            );
             let mut origin_asns = asn_path
                 .last()
                 .copied()
@@ -99,7 +116,7 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
                     origin_asns,
                     observed_origin_asns: aggregate.origin_asns,
                     asn_path,
-                    observed_asn_paths,
+                    observed_final_upstream_asns,
                     transit_asns,
                     upstream_evidence,
                     peer_asns: aggregate.peers,
@@ -108,17 +125,33 @@ pub fn load_ribs(paths: &[PathBuf]) -> Result<BTreeMap<IpNet, BgpObservation>> {
                 },
             )
         })
-        .collect())
+        .collect::<BTreeMap<_, _>>();
+    Ok((observations, announced_prefixes))
 }
 
-fn valid_observed_paths(
+pub fn belongs_to_shard(prefix: IpNet, shard: Option<(u32, u32)>) -> bool {
+    shard.is_none_or(|(index, count)| prefix_hash(prefix, count) == index)
+}
+
+fn prefix_hash(prefix: IpNet, count: u32) -> u32 {
+    match prefix {
+        IpNet::V4(prefix) => u32::from(prefix.network()) % count,
+        IpNet::V6(prefix) => {
+            let value = u128::from(prefix.network());
+            ((value ^ (value >> 64)) as u32) % count
+        }
+    }
+}
+
+fn final_upstream_asns(
     paths: &BTreeMap<Vec<u32>, usize>,
     origins: &BTreeSet<u32>,
-) -> BTreeSet<Vec<u32>> {
+    allowed: &BTreeSet<u32>,
+) -> BTreeSet<u32> {
     paths
         .keys()
         .filter(|path| path.last().is_some_and(|asn| origins.contains(asn)))
-        .cloned()
+        .filter_map(|path| path.iter().rev().find(|asn| allowed.contains(asn)).copied())
         .collect()
 }
 
@@ -191,15 +224,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn retains_every_path_with_an_observed_origin() {
+    fn retains_final_roots_for_every_path_with_an_observed_origin() {
         let paths = BTreeMap::from([
             (vec![4134, 134773, 56040], 2),
             (vec![9808, 56040], 1),
             (vec![3356, 64500], 1),
         ]);
         assert_eq!(
-            valid_observed_paths(&paths, &BTreeSet::from([56040])),
-            BTreeSet::from([vec![4134, 134773, 56040], vec![9808, 56040]])
+            final_upstream_asns(
+                &paths,
+                &BTreeSet::from([56040]),
+                &BTreeSet::from([4134, 9808]),
+            ),
+            BTreeSet::from([4134, 9808])
         );
     }
 
@@ -291,6 +328,27 @@ mod tests {
                 .all(|evidence| evidence.immediate_upstream_asns.is_empty())
         );
     }
+    #[test]
+    fn deterministic_sharding_keeps_each_prefix_in_exactly_one_shard() {
+        let prefixes: Vec<IpNet> = [
+            "1.1.8.0/24",
+            "1.1.8.0/25",
+            "2001:db8::/32",
+            "2001:db8:1::/48",
+        ]
+        .into_iter()
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .unwrap();
+
+        for prefix in prefixes {
+            let assignments: Vec<_> = (0..7)
+                .filter(|index| belongs_to_shard(prefix, Some((*index, 7))))
+                .collect();
+            assert_eq!(assignments.len(), 1, "{prefix}");
+        }
+    }
+
     #[test]
     fn transit_asn_does_not_become_origin() {
         let path = [64500, 4134, 65001];

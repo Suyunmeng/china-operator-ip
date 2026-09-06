@@ -36,15 +36,76 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all-targets
 
-  generate:
+  prepare-inputs:
     needs: check
     if: |
       github.ref == 'refs/heads/master' && (
         github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && inputs.update_ip_lists)
       )
-    runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: source
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: cargo-bins/cargo-binstall@main
+      - uses: extractions/setup-just@v3
+      - name: Download complete BGP and WHOIS snapshots
+        working-directory: source
+        run: just dependency prepare
+      - name: Upload immutable BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs
+          path: source/data/bgp
+          compression-level: 0
+          retention-days: 1
+      - name: Upload immutable WHOIS inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: whois-inputs
+          path: source/data/whois
+          compression-level: 0
+          retention-days: 1
+
+  extract-bgp:
+    needs: prepare-inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: source
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: extractions/setup-just@v3
+      - name: Download prepared BGP snapshots
+        uses: actions/download-artifact@v4
+        with:
+          name: bgp-inputs
+          path: source/data/bgp
+      - name: Extract deterministic BGP Prefix shard
+        working-directory: source
+        env:
+          CARGO_BUILD_JOBS: 2
+        run: just extract_bgp ${{ matrix.shard }} 4
+      - name: Upload BGP shard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-shard-${{ matrix.shard }}
+          path: source/artifacts/bgp-shard-${{ matrix.shard }}.json
+          compression-level: 0
+          retention-days: 1
+
+  merge-generate:
+    needs: extract-bgp
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -56,21 +117,25 @@ jobs:
           ref: ip-lists
           path: source/ip-lists
       - uses: dtolnay/rust-toolchain@stable
-      - uses: cargo-bins/cargo-binstall@main
       - uses: extractions/setup-just@v3
       - name: Install guard dependencies
         run: python -m pip install --disable-pip-version-check PyYAML
-      - uses: actions/cache@v5
+      - name: Download prepared RIR WHOIS snapshots
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            source/data/bgp
-            source/data/whois
-          key: network-assets-${{ runner.os }}-${{ github.run_id }}
-          restore-keys: |
-            network-assets-${{ runner.os }}-
-      - name: Generate complete staged database
+          name: whois-inputs
+          path: source/data/whois
+      - name: Download all BGP shard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bgp-shard-*
+          path: source/artifacts
+          merge-multiple: true
+      - name: Merge shards and generate complete database
         working-directory: source
-        run: just generate
+        env:
+          CARGO_BUILD_JOBS: 2
+        run: just merge_generate
       - name: Validate BGP-only output invariant
         working-directory: source
         run: just guard

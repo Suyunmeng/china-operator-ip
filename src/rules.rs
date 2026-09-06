@@ -527,7 +527,7 @@ assets:
             origin_asns: BTreeSet::from([4134]),
             observed_origin_asns: BTreeSet::from([4134]),
             asn_path: vec![64500, 4134],
-            observed_asn_paths: BTreeSet::from([vec![64500, 4134]]),
+            observed_final_upstream_asns: BTreeSet::new(),
             transit_asns: BTreeSet::from([64500]),
             peer_asns: BTreeSet::new(),
             collectors: BTreeSet::new(),
@@ -541,7 +541,7 @@ assets:
         observation.origin_asns = BTreeSet::from([origin]);
         observation.observed_origin_asns = BTreeSet::from([origin]);
         observation.asn_path = upstreams.iter().copied().chain([origin]).collect();
-        observation.observed_asn_paths = BTreeSet::from([observation.asn_path.clone()]);
+        observation.observed_final_upstream_asns = BTreeSet::new();
         observation.transit_asns = upstreams.iter().copied().collect();
         observation.upstream_evidence = BTreeMap::from([(
             origin,

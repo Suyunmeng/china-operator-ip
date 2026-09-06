@@ -24,7 +24,7 @@ pub fn infer_families(
 ) -> BTreeMap<u32, FamilyMembership> {
     let observed_origins: BTreeSet<u32> = observations
         .values()
-        .flat_map(|observation| observation.origin_asns.iter().copied())
+        .flat_map(|observation| observation.observed_origin_asns.iter().copied())
         .collect();
     let adjacency = origin_side_adjacency(observations);
     let mut memberships: BTreeMap<u32, FamilyMembership> = BTreeMap::new();
@@ -201,7 +201,7 @@ mod tests {
             origin_asns: BTreeSet::from([65000]),
             observed_origin_asns: BTreeSet::from([65000]),
             asn_path: vec![64500, 65000],
-            observed_asn_paths: BTreeSet::from([vec![64500, 65000]]),
+            observed_final_upstream_asns: BTreeSet::new(),
             transit_asns: BTreeSet::from([64500]),
             upstream_evidence: BTreeMap::from([(
                 65000,

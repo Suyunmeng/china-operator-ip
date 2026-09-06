@@ -15,7 +15,7 @@ pub struct BgpObservation {
     pub origin_asns: BTreeSet<u32>,
     pub observed_origin_asns: BTreeSet<u32>,
     pub asn_path: Vec<u32>,
-    pub observed_asn_paths: BTreeSet<Vec<u32>>,
+    pub observed_final_upstream_asns: BTreeSet<u32>,
     pub transit_asns: BTreeSet<u32>,
     pub upstream_evidence: BTreeMap<u32, OriginUpstreamEvidence>,
     pub peer_asns: BTreeSet<u32>,

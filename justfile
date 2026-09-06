@@ -6,14 +6,17 @@ whois_urls := "https://ftp.apnic.net/apnic/whois/apnic.db.inetnum.gz https://ftp
 
 default: generate stat
 
-# Install the BGP broker and compile the classifier.
-dependency:
+# Compile the classifier without installing input-download tooling.
+build:
+  cargo build --locked --release
+
+# Install the BGP broker used only while preparing inputs.
+dependency: build
   #!/usr/bin/env bash
   set -euo pipefail
   if ! bgpkit-broker --version >/dev/null 2>&1; then
     cargo binstall --secure --no-confirm bgpkit-broker@0.7.0
   fi
-  cargo build --locked --release
   bgpkit-broker --version
 
 # Download the latest RIB snapshot for one RouteViews/RIPE RIS collector.
@@ -82,7 +85,7 @@ prepare_whois:
 [parallel]
 prepare: prepare_ribs prepare_whois
 
-# Run the BGP-first asset classification pipeline.
+# Run the complete unsharded pipeline locally.
 generate: dependency prepare
   #!/usr/bin/env bash
   set -euo pipefail
@@ -91,8 +94,37 @@ generate: dependency prepare
   whois=(data/whois/*.gz)
   ((${#ribs[@]} > 0)) || { echo "No BGP RIB files" >&2; exit 1; }
   ((${#whois[@]} > 0)) || { echo "No RIR WHOIS files" >&2; exit 1; }
-  args=(--rules operators.yaml --output result)
+  args=(generate --rules operators.yaml --output result)
   for file in "${ribs[@]}"; do args+=(--mrt-file "${file}"); done
+  for file in "${whois[@]}"; do args+=(--whois-file "${file}"); done
+  if [[ -n "${GEO_FILE:-}" ]]; then
+    args+=(--geo-file "${GEO_FILE}")
+  fi
+  target/release/china-asset-pipeline "${args[@]}"
+
+# Aggregate one deterministic Prefix shard from the complete BGP input set.
+extract_bgp shard_index shard_count: build
+  #!/usr/bin/env bash
+  set -euo pipefail
+  shopt -s nullglob
+  ribs=(data/bgp/rib-*.gz data/bgp/rib-*.bz2)
+  ((${#ribs[@]} > 0)) || { echo "No BGP RIB files" >&2; exit 1; }
+  mkdir -p artifacts
+  args=(extract-bgp --rules operators.yaml --shard-index "{{shard_index}}" --shard-count "{{shard_count}}" --artifact "artifacts/bgp-shard-{{shard_index}}.json")
+  for file in "${ribs[@]}"; do args+=(--mrt-file "${file}"); done
+  target/release/china-asset-pipeline "${args[@]}"
+
+# Merge every verified BGP shard, infer families globally, and classify once.
+merge_generate: build
+  #!/usr/bin/env bash
+  set -euo pipefail
+  shopt -s nullglob
+  artifacts=(artifacts/*.json)
+  whois=(data/whois/*.gz)
+  ((${#artifacts[@]} > 0)) || { echo "No BGP shard artifacts" >&2; exit 1; }
+  ((${#whois[@]} > 0)) || { echo "No RIR WHOIS files" >&2; exit 1; }
+  args=(merge-generate --rules operators.yaml --output result)
+  for file in "${artifacts[@]}"; do args+=(--artifact "${file}"); done
   for file in "${whois[@]}"; do args+=(--whois-file "${file}"); done
   if [[ -n "${GEO_FILE:-}" ]]; then
     args+=(--geo-file "${GEO_FILE}")
