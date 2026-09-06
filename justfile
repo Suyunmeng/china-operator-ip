@@ -1,6 +1,6 @@
 set unstable
 
-collectors := "rrc00 rrc12 rrc21 rrc24 rrc25 route-views2 route-views6"
+collectors := "rrc00 rrc01 rrc03 rrc04 rrc05 rrc06 rrc07 rrc10 rrc11 rrc12 rrc13 rrc14 rrc15 rrc16 rrc18 rrc19 rrc20 rrc21 rrc22 rrc23 rrc24 rrc25 rrc26 route-views2 route-views6"
 
 whois_urls := "https://ftp.apnic.net/apnic/whois/apnic.db.inetnum.gz https://ftp.apnic.net/apnic/whois/apnic.db.inet6num.gz https://ftp.apnic.net/apnic/whois/apnic.db.aut-num.gz https://ftp.apnic.net/apnic/whois/apnic.db.organisation.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.inetnum.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.inet6num.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.aut-num.gz https://ftp.ripe.net/ripe/dbase/split/ripe.db.organisation.gz https://ftp.arin.net/pub/rr/arin.db.gz https://ftp.lacnic.net/lacnic/dbase/lacnic.db.gz https://ftp.afrinic.net/dbase/afrinic.db.gz"
 
@@ -43,7 +43,7 @@ prepare_rib collector:
 
 # Download all configured BGP snapshots.
 [parallel]
-prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc12") (prepare_rib "rrc21") (prepare_rib "rrc24") (prepare_rib "rrc25") (prepare_rib "route-views2") (prepare_rib "route-views6")
+prepare_ribs: (prepare_rib "rrc00") (prepare_rib "rrc01") (prepare_rib "rrc03") (prepare_rib "rrc04") (prepare_rib "rrc05") (prepare_rib "rrc06") (prepare_rib "rrc07") (prepare_rib "rrc10") (prepare_rib "rrc11") (prepare_rib "rrc12") (prepare_rib "rrc13") (prepare_rib "rrc14") (prepare_rib "rrc15") (prepare_rib "rrc16") (prepare_rib "rrc18") (prepare_rib "rrc19") (prepare_rib "rrc20") (prepare_rib "rrc21") (prepare_rib "rrc22") (prepare_rib "rrc23") (prepare_rib "rrc24") (prepare_rib "rrc25") (prepare_rib "rrc26") (prepare_rib "route-views2") (prepare_rib "route-views6")
 
 # Download one authoritative RIR WHOIS bulk snapshot.
 prepare_whois_file url:
@@ -102,15 +102,27 @@ generate: dependency prepare
   fi
   target/release/china-asset-pipeline "${args[@]}"
 
-# Aggregate one deterministic Prefix shard from the complete BGP input set.
+# Aggregate one deterministic Prefix shard from one configured BGP input group.
 extract_bgp shard_index shard_count: build
   #!/usr/bin/env bash
   set -euo pipefail
   shopt -s nullglob
-  ribs=(data/bgp/rib-*.gz data/bgp/rib-*.bz2)
+  ribs=()
+  if [[ -n "${BGP_COLLECTORS:-}" ]]; then
+    for collector in ${BGP_COLLECTORS}; do
+      matches=(data/bgp/rib-"${collector}".gz data/bgp/rib-"${collector}".bz2)
+      ((${#matches[@]} > 0)) || { echo "No BGP RIB file for ${collector}" >&2; exit 1; }
+      ribs+=("${matches[@]}")
+    done
+  else
+    ribs=(data/bgp/rib-*.gz data/bgp/rib-*.bz2)
+  fi
   ((${#ribs[@]} > 0)) || { echo "No BGP RIB files" >&2; exit 1; }
   mkdir -p artifacts
-  args=(extract-bgp --rules operators.yaml --shard-index "{{shard_index}}" --shard-count "{{shard_count}}" --artifact "artifacts/bgp-shard-{{shard_index}}.json")
+  group_name="${BGP_GROUP_NAME:-all}"
+  source_group_index="${BGP_SOURCE_GROUP_INDEX:-0}"
+  source_group_count="${BGP_SOURCE_GROUP_COUNT:-1}"
+  args=(extract-bgp --rules operators.yaml --shard-index "{{shard_index}}" --shard-count "{{shard_count}}" --source-group-index "${source_group_index}" --source-group-count "${source_group_count}" --artifact "artifacts/bgp-shard-${group_name}-{{shard_index}}.json")
   for file in "${ribs[@]}"; do args+=(--mrt-file "${file}"); done
   target/release/china-asset-pipeline "${args[@]}"
 

@@ -55,11 +55,97 @@ jobs:
       - name: Download complete BGP and WHOIS snapshots
         working-directory: source
         run: just dependency prepare
-      - name: Upload immutable BGP inputs
+      - name: Upload RIS 00-03 BGP inputs
         uses: actions/upload-artifact@v4
         with:
-          name: bgp-inputs
-          path: source/data/bgp
+          name: bgp-inputs-ris-00-03
+          path: |
+            source/data/bgp/rib-rrc00.*
+            source/data/bgp/rib-rrc01.*
+            source/data/bgp/rib-rrc03.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RIS 04-06 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-ris-04-06
+          path: |
+            source/data/bgp/rib-rrc04.*
+            source/data/bgp/rib-rrc05.*
+            source/data/bgp/rib-rrc06.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RIS 07-11 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-ris-07-11
+          path: |
+            source/data/bgp/rib-rrc07.*
+            source/data/bgp/rib-rrc10.*
+            source/data/bgp/rib-rrc11.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RIS 12-14 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-ris-12-14
+          path: |
+            source/data/bgp/rib-rrc12.*
+            source/data/bgp/rib-rrc13.*
+            source/data/bgp/rib-rrc14.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RIS 15-18 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-ris-15-18
+          path: |
+            source/data/bgp/rib-rrc15.*
+            source/data/bgp/rib-rrc16.*
+            source/data/bgp/rib-rrc18.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RIS 19-21 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-ris-19-21
+          path: |
+            source/data/bgp/rib-rrc19.*
+            source/data/bgp/rib-rrc20.*
+            source/data/bgp/rib-rrc21.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RIS 22-24 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-ris-22-24
+          path: |
+            source/data/bgp/rib-rrc22.*
+            source/data/bgp/rib-rrc23.*
+            source/data/bgp/rib-rrc24.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RIS 25-26 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-ris-25-26
+          path: |
+            source/data/bgp/rib-rrc25.*
+            source/data/bgp/rib-rrc26.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RouteViews 2 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-route-views2
+          path: source/data/bgp/rib-route-views2.*
+          compression-level: 0
+          retention-days: 1
+      - name: Upload RouteViews 6 BGP inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgp-inputs-route-views6
+          path: source/data/bgp/rib-route-views6.*
           compression-level: 0
           retention-days: 1
       - name: Upload immutable WHOIS inputs
@@ -77,6 +163,47 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        source_group:
+          - name: ris-00-03
+            collectors: rrc00 rrc01 rrc03
+            artifact: bgp-inputs-ris-00-03
+            index: 0
+          - name: ris-04-06
+            collectors: rrc04 rrc05 rrc06
+            artifact: bgp-inputs-ris-04-06
+            index: 1
+          - name: ris-07-11
+            collectors: rrc07 rrc10 rrc11
+            artifact: bgp-inputs-ris-07-11
+            index: 2
+          - name: ris-12-14
+            collectors: rrc12 rrc13 rrc14
+            artifact: bgp-inputs-ris-12-14
+            index: 3
+          - name: ris-15-18
+            collectors: rrc15 rrc16 rrc18
+            artifact: bgp-inputs-ris-15-18
+            index: 4
+          - name: ris-19-21
+            collectors: rrc19 rrc20 rrc21
+            artifact: bgp-inputs-ris-19-21
+            index: 5
+          - name: ris-22-24
+            collectors: rrc22 rrc23 rrc24
+            artifact: bgp-inputs-ris-22-24
+            index: 6
+          - name: ris-25-26
+            collectors: rrc25 rrc26
+            artifact: bgp-inputs-ris-25-26
+            index: 7
+          - name: route-views2
+            collectors: route-views2
+            artifact: bgp-inputs-route-views2
+            index: 8
+          - name: route-views6
+            collectors: route-views6
+            artifact: bgp-inputs-route-views6
+            index: 9
         shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v6
@@ -87,18 +214,22 @@ jobs:
       - name: Download prepared BGP snapshots
         uses: actions/download-artifact@v4
         with:
-          name: bgp-inputs
+          name: ${{ matrix.source_group.artifact }}
           path: source/data/bgp
       - name: Extract deterministic BGP Prefix shard
         working-directory: source
         env:
+          BGP_COLLECTORS: ${{ matrix.source_group.collectors }}
+          BGP_GROUP_NAME: ${{ matrix.source_group.name }}
+          BGP_SOURCE_GROUP_INDEX: ${{ matrix.source_group.index }}
+          BGP_SOURCE_GROUP_COUNT: 10
           CARGO_BUILD_JOBS: 2
         run: just extract_bgp ${{ matrix.shard }} 4
       - name: Upload BGP shard artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bgp-shard-${{ matrix.shard }}
-          path: source/artifacts/bgp-shard-${{ matrix.shard }}.json
+          name: bgp-shard-${{ matrix.source_group.name }}-${{ matrix.shard }}
+          path: source/artifacts/bgp-shard-${{ matrix.source_group.name }}-${{ matrix.shard }}.json
           compression-level: 0
           retention-days: 1
 

@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use crate::model::BgpObservation;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BgpSource {
@@ -25,6 +25,8 @@ pub struct BgpShardArtifact {
     pub schema_version: u32,
     pub rules_sha256: String,
     pub sources: Vec<BgpSource>,
+    pub source_group_index: u32,
+    pub source_group_count: u32,
     pub shard_index: u32,
     pub shard_count: u32,
     pub observations: BTreeMap<IpNet, BgpObservation>,

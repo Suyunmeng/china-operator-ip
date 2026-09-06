@@ -175,6 +175,7 @@ pub struct ExtractBgpOptions {
     pub rule_file: PathBuf,
     pub mrt_files: Vec<PathBuf>,
     pub shard: (u32, u32),
+    pub source_group: (u32, u32),
     pub artifact_path: PathBuf,
 }
 
@@ -207,7 +208,7 @@ pub fn extract_bgp(options: ExtractBgpOptions) -> Result<()> {
     let (observations, announced_prefixes) = load_ribs(
         &options.mrt_files,
         &allowed_final_upstream_asns,
-        config.settings.min_bgp_peers,
+        0,
         Some(options.shard),
         options.shard.0 == 0,
     )?;
@@ -219,6 +220,8 @@ pub fn extract_bgp(options: ExtractBgpOptions) -> Result<()> {
             sources: bgp_sources(&options.mrt_files)?,
             shard_index: options.shard.0,
             shard_count: options.shard.1,
+            source_group_index: options.source_group.0,
+            source_group_count: options.source_group.1,
             observations,
             announced_prefixes: (options.shard.0 == 0).then_some(announced_prefixes),
         },
@@ -236,7 +239,11 @@ pub fn merge_generate(
     artifact_paths: &[PathBuf],
 ) -> Result<PipelineSummary> {
     let config = Config::load(&options.rule_file)?;
-    let artifacts = merge_bgp_artifacts(artifact_paths, &sha256_file(&options.rule_file)?)?;
+    let artifacts = merge_bgp_artifacts(
+        artifact_paths,
+        &sha256_file(&options.rule_file)?,
+        config.settings.min_bgp_peers,
+    )?;
     generate(
         &config,
         &options,
@@ -248,16 +255,19 @@ pub fn merge_generate(
 fn merge_bgp_artifacts(
     artifact_paths: &[PathBuf],
     rules_sha256: &str,
+    min_bgp_peers: usize,
 ) -> Result<MergedBgpArtifacts> {
     if artifact_paths.is_empty() {
         anyhow::bail!("at least one BGP shard artifact is required");
     }
 
-    let mut expected_count = None;
-    let mut expected_sources = None;
-    let mut shard_indices = BTreeSet::new();
+    let mut expected_shard_count = None;
+    let mut expected_source_group_count = None;
+    let mut source_groups: BTreeMap<Vec<String>, BTreeSet<u32>> = BTreeMap::new();
+    let mut source_checksums = BTreeMap::new();
+    let mut announcement_groups = BTreeSet::new();
+    let mut announced_prefixes = BTreeSet::new();
     let mut observations = BTreeMap::new();
-    let mut announced_prefixes = None;
 
     for artifact_path in artifact_paths {
         let artifact = read_artifact(artifact_path)?;
@@ -270,39 +280,66 @@ fn merge_bgp_artifacts(
         if artifact.rules_sha256 != rules_sha256 {
             anyhow::bail!("rules checksum mismatch in {}", artifact_path.display());
         }
+        if artifact.sources.is_empty() {
+            anyhow::bail!("missing BGP sources in {}", artifact_path.display());
+        }
         if artifact.shard_count == 0 || artifact.shard_index >= artifact.shard_count {
-            anyhow::bail!("invalid shard coordinates in {}", artifact_path.display());
-        }
-        if expected_count.is_some_and(|count| count != artifact.shard_count) {
-            anyhow::bail!("inconsistent shard counts");
-        }
-        expected_count.get_or_insert(artifact.shard_count);
-        if expected_sources
-            .as_ref()
-            .is_some_and(|sources| sources != &artifact.sources)
-        {
             anyhow::bail!(
-                "BGP source checksum mismatch in {}",
+                "invalid BGP shard coordinates in {}",
                 artifact_path.display()
             );
         }
-        expected_sources.get_or_insert(artifact.sources.clone());
-        if !shard_indices.insert(artifact.shard_index) {
-            anyhow::bail!("duplicate BGP shard {}", artifact.shard_index);
+        if artifact.source_group_count == 0
+            || artifact.source_group_index >= artifact.source_group_count
+        {
+            anyhow::bail!(
+                "invalid BGP source group coordinates in {}",
+                artifact_path.display()
+            );
+        }
+        if expected_shard_count.is_some_and(|count| count != artifact.shard_count) {
+            anyhow::bail!("inconsistent BGP shard counts");
+        }
+        expected_shard_count.get_or_insert(artifact.shard_count);
+        if expected_source_group_count.is_some_and(|count| count != artifact.source_group_count) {
+            anyhow::bail!("inconsistent BGP source group counts");
+        }
+        expected_source_group_count.get_or_insert(artifact.source_group_count);
+
+        let source_group: Vec<_> = artifact
+            .sources
+            .iter()
+            .map(|source| source.filename.clone())
+            .collect();
+        if source_group.windows(2).any(|pair| pair[0] >= pair[1]) {
+            anyhow::bail!("BGP source group is unsorted or duplicated");
+        }
+        if !source_groups
+            .entry(source_group.clone())
+            .or_default()
+            .insert(artifact.shard_index)
+        {
+            anyhow::bail!("duplicate BGP source group shard");
+        }
+        for source in artifact.sources {
+            if let Some(existing) = source_checksums.get(&source.filename) {
+                if existing != &source.sha256 {
+                    anyhow::bail!("BGP source checksum mismatch");
+                }
+            } else {
+                source_checksums.insert(source.filename, source.sha256);
+            }
         }
         if artifact.shard_index == 0 {
-            if announced_prefixes.is_some() {
-                anyhow::bail!("duplicate announced-prefix index artifact");
-            }
-            announced_prefixes = Some(artifact.announced_prefixes.with_context(|| {
-                format!(
-                    "missing announced-prefix index in {}",
-                    artifact_path.display()
-                )
-            })?);
+            let prefixes = artifact.announced_prefixes.with_context(|| {
+                format!("missing announcement index in {}", artifact_path.display())
+            })?;
+            announced_prefixes.extend(prefixes);
+            announcement_groups.insert(artifact.source_group_index);
         } else if artifact.announced_prefixes.is_some() {
-            anyhow::bail!("only shard zero may contain the announced-prefix index");
+            anyhow::bail!("only Prefix shard zero may contain the announcement index");
         }
+
         for (prefix, observation) in artifact.observations {
             if prefix != observation.prefix
                 || !crate::bgp::belongs_to_shard(
@@ -312,20 +349,71 @@ fn merge_bgp_artifacts(
             {
                 anyhow::bail!("misassigned Prefix in {}", artifact_path.display());
             }
-            if observations.insert(prefix, observation).is_some() {
-                anyhow::bail!("duplicate Prefix across BGP shard artifacts: {prefix}");
+            if let Some(existing) = observations.get_mut(&prefix) {
+                merge_observations(existing, observation);
+            } else {
+                observations.insert(prefix, observation);
             }
         }
     }
 
-    let shard_count = expected_count.context("missing BGP shard count")?;
-    if shard_indices != (0..shard_count).collect() {
-        anyhow::bail!("BGP shard artifacts are incomplete");
+    let shard_count = expected_shard_count.context("missing BGP shard count")?;
+    let source_group_count =
+        expected_source_group_count.context("missing BGP source group count")?;
+    if source_groups.len() != source_group_count as usize {
+        anyhow::bail!("BGP source groups are incomplete");
     }
+    let expected_shards: BTreeSet<_> = (0..shard_count).collect();
+    if source_groups
+        .values()
+        .any(|shards| shards != &expected_shards)
+    {
+        anyhow::bail!("BGP source group shards are incomplete");
+    }
+    let expected_source_groups: BTreeSet<_> = (0..source_group_count).collect();
+    if announcement_groups != expected_source_groups {
+        anyhow::bail!("BGP announcement indexes are incomplete");
+    }
+
+    announced_prefixes.retain(|prefix| {
+        observations
+            .get(prefix)
+            .is_some_and(|observation| observation.peer_asns.len() >= min_bgp_peers)
+    });
+    observations.retain(|_, observation| observation.peer_asns.len() >= min_bgp_peers);
     Ok(MergedBgpArtifacts {
         observations,
-        announced_prefixes: announced_prefixes.context("missing announced-prefix index")?,
+        announced_prefixes,
     })
+}
+
+fn merge_observations(
+    left: &mut crate::model::BgpObservation,
+    right: crate::model::BgpObservation,
+) {
+    let prefer_right =
+        (right.asn_path.len(), &right.asn_path) < (left.asn_path.len(), &left.asn_path);
+    if prefer_right {
+        left.origin_asns = right.origin_asns.clone();
+        left.asn_path = right.asn_path.clone();
+        left.transit_asns = right.transit_asns.clone();
+    }
+    left.observed_origin_asns.extend(right.observed_origin_asns);
+    left.observed_final_upstream_asns
+        .extend(right.observed_final_upstream_asns);
+    left.peer_asns.extend(right.peer_asns);
+    left.collectors.extend(right.collectors);
+    left.last_seen = left.last_seen.max(right.last_seen);
+    for (origin, evidence) in right.upstream_evidence {
+        if let Some(merged) = left.upstream_evidence.get_mut(&origin) {
+            merged
+                .immediate_upstream_asns
+                .extend(evidence.immediate_upstream_asns);
+            merged.complete &= evidence.complete;
+        } else {
+            left.upstream_evidence.insert(origin, evidence);
+        }
+    }
 }
 
 fn bgp_sources(paths: &[PathBuf]) -> Result<Vec<BgpSource>> {
@@ -667,6 +755,56 @@ assets:
     }
 
     #[test]
+    fn merge_bgp_artifacts_unions_observations_from_source_groups() {
+        let directory = tempdir().unwrap();
+        let prefix = "240c:409f::/46".parse().unwrap();
+        let mut first = observation([vec![4134, 134756]]);
+        first.prefix = prefix;
+        first.peer_asns = BTreeSet::from([100]);
+        let mut second = observation([vec![46997, 38008, 10099, 4837, 38365]]);
+        second.prefix = prefix;
+        second.origin_asns = BTreeSet::from([38365]);
+        second.peer_asns = BTreeSet::from([200]);
+        second.collectors = BTreeSet::from(["rrc24".to_string()]);
+        let paths = [
+            ("group-zero.json", 0, "rib-rrc00.gz", first),
+            ("group-one.json", 1, "rib-rrc24.gz", second),
+        ];
+        let mut artifacts = Vec::new();
+        for (name, group, filename, observation) in paths {
+            let path = directory.path().join(name);
+            write_artifact(
+                &path,
+                &BgpShardArtifact {
+                    schema_version: SCHEMA_VERSION,
+                    rules_sha256: "rules".to_string(),
+                    sources: vec![BgpSource {
+                        filename: filename.to_string(),
+                        sha256: "source".to_string(),
+                    }],
+                    source_group_index: group,
+                    source_group_count: 2,
+                    shard_index: 0,
+                    shard_count: 1,
+                    observations: BTreeMap::from([(prefix, observation)]),
+                    announced_prefixes: Some(BTreeSet::from([prefix])),
+                },
+            )
+            .unwrap();
+            artifacts.push(path);
+        }
+
+        let merged = merge_bgp_artifacts(&artifacts, "rules", 2).unwrap();
+        let merged_observation = merged.observations.get(&prefix).unwrap();
+        assert_eq!(
+            merged_observation.observed_origin_asns,
+            BTreeSet::from([134756, 38365])
+        );
+        assert_eq!(merged_observation.peer_asns, BTreeSet::from([100, 200]));
+        assert_eq!(merged.announced_prefixes, BTreeSet::from([prefix]));
+    }
+
+    #[test]
     fn merge_bgp_artifacts_preserves_all_shards_and_full_announcement_index() {
         let directory = tempdir().unwrap();
         let first_prefix = "203.0.113.0/24".parse().unwrap();
@@ -689,6 +827,8 @@ assets:
                     filename: "rib-a.gz".to_string(),
                     sha256: "source".to_string(),
                 }],
+                source_group_index: 0,
+                source_group_count: 1,
                 shard_index: 0,
                 shard_count: 2,
                 observations: BTreeMap::from([(first_prefix, first)]),
@@ -705,6 +845,8 @@ assets:
                     filename: "rib-a.gz".to_string(),
                     sha256: "source".to_string(),
                 }],
+                source_group_index: 0,
+                source_group_count: 1,
                 shard_index: 1,
                 shard_count: 2,
                 observations: BTreeMap::from([(second_prefix, second)]),
@@ -713,7 +855,7 @@ assets:
         )
         .unwrap();
 
-        let merged = merge_bgp_artifacts(&[shard_one, shard_zero], "rules").unwrap();
+        let merged = merge_bgp_artifacts(&[shard_one, shard_zero], "rules", 0).unwrap();
         assert_eq!(merged.observations.len(), 2);
         assert_eq!(
             merged.announced_prefixes,
@@ -730,7 +872,12 @@ assets:
             &BgpShardArtifact {
                 schema_version: SCHEMA_VERSION,
                 rules_sha256: "rules".to_string(),
-                sources: Vec::new(),
+                sources: vec![BgpSource {
+                    filename: "rib-a.gz".to_string(),
+                    sha256: "source".to_string(),
+                }],
+                source_group_index: 0,
+                source_group_count: 1,
                 shard_index: 0,
                 shard_count: 2,
                 observations: BTreeMap::new(),
@@ -740,7 +887,7 @@ assets:
         .unwrap();
 
         assert!(
-            merge_bgp_artifacts(&[artifact_path], "rules")
+            merge_bgp_artifacts(&[artifact_path], "rules", 0)
                 .unwrap_err()
                 .to_string()
                 .contains("incomplete")
@@ -769,7 +916,12 @@ assets:
                 &BgpShardArtifact {
                     schema_version: SCHEMA_VERSION,
                     rules_sha256: "rules".to_string(),
-                    sources: Vec::new(),
+                    sources: vec![BgpSource {
+                        filename: "rib-a.gz".to_string(),
+                        sha256: "source".to_string(),
+                    }],
+                    source_group_index: 0,
+                    source_group_count: 1,
                     shard_index,
                     shard_count: 2,
                     observations,
@@ -780,7 +932,7 @@ assets:
         }
 
         assert!(
-            merge_bgp_artifacts(&[shard_zero, shard_one], "rules")
+            merge_bgp_artifacts(&[shard_zero, shard_one], "rules", 0)
                 .unwrap_err()
                 .to_string()
                 .contains("misassigned")
@@ -802,6 +954,8 @@ assets:
                         filename: "rib-a.gz".to_string(),
                         sha256: source.to_string(),
                     }],
+                    source_group_index: 0,
+                    source_group_count: 1,
                     shard_index,
                     shard_count: 2,
                     observations: BTreeMap::new(),
@@ -812,7 +966,7 @@ assets:
         }
 
         assert!(
-            merge_bgp_artifacts(&[shard_zero, shard_one], "rules")
+            merge_bgp_artifacts(&[shard_zero, shard_one], "rules", 0)
                 .unwrap_err()
                 .to_string()
                 .contains("source checksum mismatch")

@@ -41,6 +41,10 @@ struct ExtractBgpArgs {
     shard_index: u32,
     #[arg(long = "shard-count")]
     shard_count: u32,
+    #[arg(long = "source-group-index", default_value_t = 0)]
+    source_group_index: u32,
+    #[arg(long = "source-group-count", default_value_t = 1)]
+    source_group_count: u32,
     #[arg(long = "artifact", default_value = "bgp-shard.json")]
     artifact: PathBuf,
 }
@@ -75,10 +79,14 @@ fn main() -> Result<()> {
             if args.shard_count == 0 || args.shard_index >= args.shard_count {
                 anyhow::bail!("shard index/count must be valid");
             }
+            if args.source_group_count == 0 || args.source_group_index >= args.source_group_count {
+                anyhow::bail!("source group index/count must be valid");
+            }
             extract_bgp(ExtractBgpOptions {
                 rule_file: args.rules,
                 mrt_files: args.mrt_files,
                 shard: (args.shard_index, args.shard_count),
+                source_group: (args.source_group_index, args.source_group_count),
                 artifact_path: args.artifact,
             })?;
         }

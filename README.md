@@ -211,7 +211,7 @@ just check
 
 数据下载到被 Git 忽略的 `data/`：
 
-- BGP：RIPE RIS `rrc00/rrc12/rrc21/rrc24/rrc25`、RouteViews `route-views2/route-views6`
+- BGP：RIPE RIS `rrc00/rrc01/rrc03/rrc04/rrc05/rrc06/rrc07/rrc10/rrc11/rrc12/rrc13/rrc14/rrc15/rrc16/rrc18/rrc19/rrc20/rrc21/rrc22/rrc23/rrc24/rrc25/rrc26`、RouteViews `route-views2/route-views6`
 - WHOIS：APNIC、RIPE NCC、ARIN、LACNIC、AFRINIC bulk snapshots
 
 可选 Geo CSV 通过环境变量传入：
