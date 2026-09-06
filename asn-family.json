@@ -206,6 +206,17 @@
     ]
   },
   {
+    "asn": 4382,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 4515,
     "family": "cernet",
     "asset": "cernet",
@@ -1671,6 +1682,17 @@
     ]
   },
   {
+    "asn": 9434,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 9450,
     "family": "chinanet",
     "asset": "chinanet",
@@ -2661,6 +2683,17 @@
     ]
   },
   {
+    "asn": 17561,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 17564,
     "family": "cernet",
     "asset": "cernet",
@@ -2974,6 +3007,17 @@
   },
   {
     "asn": 17889,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 17893,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
@@ -4835,6 +4879,17 @@
     ]
   },
   {
+    "asn": 38016,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 38019,
     "family": "cmcc",
     "asset": "cmcc",
@@ -6193,6 +6248,17 @@
     ]
   },
   {
+    "asn": 45489,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 45496,
     "family": "cernet",
     "asset": "cernet",
@@ -6382,6 +6448,17 @@
   },
   {
     "asn": 45668,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 45701,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
@@ -6653,6 +6730,17 @@
   },
   {
     "asn": 54415,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 55329,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
@@ -7083,6 +7171,17 @@
   },
   {
     "asn": 55822,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 55850,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
@@ -7764,6 +7863,17 @@
     ]
   },
   {
+    "asn": 58487,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 58505,
     "family": "cernet",
     "asset": "cernet",
@@ -8220,6 +8330,17 @@
     ]
   },
   {
+    "asn": 58815,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 58867,
     "family": "cernet",
     "asset": "cernet",
@@ -8655,6 +8776,17 @@
   },
   {
     "asn": 63916,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 63927,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
@@ -10353,8 +10485,8 @@
   },
   {
     "asn": 133182,
-    "family": "chinanet",
-    "asset": "chinanet",
+    "family": "cernet",
+    "asset": "cernet",
     "score": 70,
     "depth": 2,
     "evidence": [
@@ -12733,6 +12865,17 @@
     ]
   },
   {
+    "asn": 135636,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 135652,
     "family": "cernet",
     "asset": "cernet",
@@ -14406,6 +14549,17 @@
     ]
   },
   {
+    "asn": 137853,
+    "family": "chinanet",
+    "asset": "chinanet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 137856,
     "family": "cernet",
     "asset": "cernet",
@@ -15771,6 +15925,17 @@
   },
   {
     "asn": 139225,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 139238,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
@@ -18212,6 +18377,17 @@
       "domestic-asn-whois",
       "asn-organisation-rule",
       "shared-maintainer"
+    ]
+  },
+  {
+    "asn": 140659,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
     ]
   },
   {
