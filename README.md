@@ -20,6 +20,7 @@
 生成管线按以下顺序工作：
 
 1. **BGP 决定是否存在**：RouteViews 和 RIPE RIS RIB 提供当前可见 Prefix、Origin ASN、AS Path、Peer ASN、采集器和最后观测时间。
+   只有被至少 50 个独立 BGP Peer ASN 观测到的 Prefix 才视为足够可见；低可见度的更具体路由即使存在 Origin/WHOIS 证据，也不会进入普通资产列表或 `china*` 聚合列表。
 2. **WHOIS 决定资产是谁**：APNIC、RIPE NCC、ARIN、LACNIC、AFRINIC 的权威注册数据提供 Organisation、Org ID、Maintainer、NetName、Descr 和注册国家。
 3. **ASN Graph 决定网络关系**：程序只从少量运营商根 ASN 出发，结合 ASN WHOIS 组织证据和 Origin 侧 BGP 邻接发现网络家族；BGP 邻接本身分值不足，不能独立建立归属。
 4. **规则决定分类**：`operators.yaml` 用优先级和所有者字段把资产分类为 carrier、cloud、cdn、ixp、idc、enterprise、education、research 等类型。
