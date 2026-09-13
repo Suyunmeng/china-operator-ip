@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
-    path::Path,
+    path::{Component, Path},
 };
 
 use anyhow::{Context, Result, bail};
@@ -61,10 +61,10 @@ pub struct MetadataFiles {
 impl Default for MetadataFiles {
     fn default() -> Self {
         Self {
-            owner: "prefix-owner.jsonl".to_string(),
-            asn: "prefix-asn.jsonl".to_string(),
-            path: "prefix-path.jsonl".to_string(),
-            family: "asn-family.json".to_string(),
+            owner: "metadata/prefix-owner".to_string(),
+            asn: "metadata/prefix-asn".to_string(),
+            path: "metadata/prefix-path".to_string(),
+            family: "metadata/asn-family.json".to_string(),
         }
     }
 }
@@ -223,15 +223,11 @@ impl Config {
             &metadata.path,
             &metadata.family,
         ] {
-            if path.is_empty()
-                || path == "."
-                || path.contains('/')
-                || path.contains('\\')
-                || path.contains("..")
-            {
-                bail!("metadata output path {path:?} is not a safe basename");
+            if !is_safe_relative_path(path) {
+                bail!("metadata output path {path:?} is not a safe relative path");
             }
         }
+        validate_metadata_paths(metadata)?;
 
         validate_china_aggregate(self.settings.china.as_ref(), &self.assets)?;
 
@@ -316,6 +312,51 @@ impl Config {
         validate_root_ownership(&self.assets)?;
         Ok(())
     }
+}
+
+fn is_safe_relative_path(path: &str) -> bool {
+    if path.is_empty() || path.contains('\\') || path.contains("//") {
+        return false;
+    }
+    let path = Path::new(path);
+    !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+}
+
+fn validate_metadata_paths(metadata: &MetadataFiles) -> Result<()> {
+    let paths = [
+        (metadata.owner.as_str(), "metadata.owner"),
+        (metadata.asn.as_str(), "metadata.asn"),
+        (metadata.path.as_str(), "metadata.path"),
+        (metadata.family.as_str(), "metadata.family"),
+    ];
+    for (index, (path, owner)) in paths.iter().enumerate() {
+        for (other_path, other_owner) in paths.iter().skip(index + 1) {
+            if paths_conflict(path, other_path) {
+                bail!(
+                    "{owner} collides with {other_owner} at overlapping metadata path {path:?}/{other_path:?}"
+                );
+            }
+        }
+        for root_name in ["manifest.json", "china.txt", "china6.txt", "china46.txt"] {
+            if paths_conflict(path, root_name) {
+                bail!("{owner} collides with generated root file at metadata path {path:?}");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn paths_conflict(left: &str, right: &str) -> bool {
+    left == right
+        || left
+            .strip_prefix(right)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+        || right
+            .strip_prefix(left)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 fn validate_china_aggregate(
@@ -424,6 +465,18 @@ fn validate_output_names(
                 format!("{basename}6.txt"),
                 format!("{basename}46.txt"),
             ] {
+                for (metadata_path, metadata_owner) in [
+                    (metadata.owner.as_str(), "metadata.owner"),
+                    (metadata.asn.as_str(), "metadata.asn"),
+                    (metadata.path.as_str(), "metadata.path"),
+                    (metadata.family.as_str(), "metadata.family"),
+                ] {
+                    if paths_conflict(metadata_path, &filename) {
+                        bail!(
+                            "asset {asset} output collides with {metadata_owner} at generated file {filename}"
+                        );
+                    }
+                }
                 if let Some(previous) = reserved.get(&filename) {
                     bail!(
                         "asset {asset} output collides with {previous} at generated file {filename}"
@@ -808,6 +861,65 @@ assets:
             "final_upstream_asn: [4134, 4134]",
         );
         let mut config: Config = serde_yaml::from_str(&duplicate_upstream).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn metadata_paths_reject_overlaps() {
+        let yaml = r#"
+version: 1
+settings:
+  metadata_files:
+    owner: metadata
+    asn: metadata/prefix-asn
+assets:
+  carrier:
+    type: carrier
+    owner: Carrier
+    priority: 1
+    match:
+      origin_asn: [4134]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn metadata_paths_reject_asset_output_overlap() {
+        let yaml = r#"
+version: 1
+settings:
+  metadata_files:
+    owner: cloud.txt/owner
+assets:
+  carrier:
+    type: carrier
+    owner: Carrier
+    priority: 1
+    match:
+      origin_asn: [4134]
+    outputs: [cloud]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
+        assert!(config.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn metadata_paths_reject_root_file_overlap() {
+        let yaml = r#"
+version: 1
+settings:
+  metadata_files:
+    owner: manifest.json/owner
+assets:
+  carrier:
+    type: carrier
+    owner: Carrier
+    priority: 1
+    match:
+      origin_asn: [4134]
+"#;
+        let mut config: Config = serde_yaml::from_str(yaml).unwrap();
         assert!(config.validate_and_compile().is_err());
     }
 

@@ -69,15 +69,15 @@ git clone -b ip-lists https://github.com/Suyunmeng/china-operator-ip.git
 
 ### Metadata
 
-`ip-lists` 还包含以下可审计数据：
+`ip-lists` 还包含以下可审计数据。大型 Prefix 元数据不会直接放在发布分支根目录，而是放在 `metadata/` 下，并按 Prefix 稳定分为 `00.jsonl` 到 `0f.jsonl`；每个分片内部按 Prefix 升序排列：
 
-- `prefix-owner.jsonl`：每个已分类 Prefix 的资产、所有者、类型、WHOIS、规则、置信度和位置。
-- `prefix-asn.jsonl`：分类使用的代表性 Origin ASN、所有采集器实际观测到的 `observed_origin_asn`、自动推导的 ASN Family、Peer 和采集器。
-- `prefix-path.jsonl`：代表性 AS Path，并明确分离 Origin、Transit、Peer ASN；`observed_immediate_upstream_asn` 和 `immediate_upstream_evidence_complete` 记录即时上游特例所依据的完整观测证据，`observed_final_upstream_asn` 记录满足 China 聚合最终上游策略的全部根 ASN。
-- `asn-family.json`：ASN Graph 自动发现结果、分数、深度和证据。
-- `manifest.json`：Schema 版本和输出清单。
+- `metadata/prefix-owner/00.jsonl` … `0f.jsonl`：每个已分类 Prefix 的资产、所有者、类型、WHOIS、规则、置信度和位置。
+- `metadata/prefix-asn/00.jsonl` … `0f.jsonl`：分类使用的代表性 Origin ASN、所有采集器实际观测到的 `observed_origin_asn`、自动推导的 ASN Family、Peer 和采集器。
+- `metadata/prefix-path/00.jsonl` … `0f.jsonl`：代表性 AS Path，并明确分离 Origin、Transit、Peer ASN；`observed_immediate_upstream_asn` 和 `immediate_upstream_evidence_complete` 记录即时上游特例所依据的完整观测证据，`observed_final_upstream_asn` 记录满足 China 聚合最终上游策略的全部根 ASN。
+- `metadata/asn-family.json`：ASN Graph 自动发现结果、分数、深度和证据。
+- `manifest.json`：Schema 版本和递归输出清单。
 
-`prefix-owner.jsonl` 至少包含：
+`metadata/prefix-owner/*.jsonl` 中的记录至少包含：
 
 ```json
 {

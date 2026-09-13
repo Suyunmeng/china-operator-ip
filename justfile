@@ -163,12 +163,11 @@ guard:
   china_final_upstreams = set(china.get("final_upstream_asn", []))
   if not china_assets or not china_final_upstreams:
       raise SystemExit("settings.china must configure assets and final_upstream_asn")
-  owner_file = metadata_files.get("owner", "prefix-owner.jsonl")
-  asn_file = metadata_files.get("asn", "prefix-asn.jsonl")
-  path_file = metadata_files.get("path", "prefix-path.jsonl")
-  family_file = metadata_files.get("family", "asn-family.json")
+  owner_file = metadata_files.get("owner", "metadata/prefix-owner")
+  asn_file = metadata_files.get("asn", "metadata/prefix-asn")
+  path_file = metadata_files.get("path", "metadata/prefix-path")
+  family_file = metadata_files.get("family", "metadata/asn-family.json")
   required = [
-      owner_file, asn_file, path_file,
       family_file, "manifest.json",
       "china.txt", "china6.txt", "china46.txt",
   ]
@@ -183,103 +182,123 @@ guard:
   if missing:
       raise SystemExit(f"missing outputs: {', '.join(missing)}")
 
+  def read_jsonl_files(base_name):
+      directory = result / base_name
+      if not directory.is_dir():
+          raise SystemExit(f"missing metadata directory: {base_name}")
+      expected_names = {f"{index:02x}.jsonl" for index in range(16)}
+      actual_names = {path.name for path in directory.glob("*.jsonl")}
+      if actual_names != expected_names:
+          raise SystemExit(
+              f"{base_name} shards are incomplete: "
+              f"missing={sorted(expected_names - actual_names)} "
+              f"extra={sorted(actual_names - expected_names)}"
+          )
+      for path in sorted(directory.glob("*.jsonl")):
+          previous_prefix = None
+          for line_number, line in enumerate(path.open(encoding="utf-8"), 1):
+              row = json.loads(line)
+              network = ipaddress.ip_network(row["prefix"], strict=True)
+              prefix = str(network)
+              sort_key = (network.version, int(network.network_address), network.prefixlen)
+              if previous_prefix is not None and sort_key <= previous_prefix:
+                  raise SystemExit(
+                      f"{path}:{line_number}: metadata shard is not sorted: {prefix}"
+                  )
+              previous_prefix = sort_key
+              yield path, line_number, row
+
   announced = set()
   china_v4 = set()
   china_v6 = set()
   metadata = {}
   asn_metadata = {}
-  with (result / asn_file).open(encoding="utf-8") as stream:
-      for line_number, line in enumerate(stream, 1):
-          row = json.loads(line)
-          prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
-          if prefix in asn_metadata:
-              raise SystemExit(f"duplicate ASN metadata prefix: {prefix}")
-          asn_metadata[prefix] = row
-  with (result / owner_file).open(encoding="utf-8") as stream:
-      for line_number, line in enumerate(stream, 1):
-          row = json.loads(line)
-          prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
-          if prefix in metadata:
-              raise SystemExit(f"duplicate metadata prefix: {prefix}")
-          if row["ip_version"] != ipaddress.ip_network(prefix).version:
-              raise SystemExit(f"wrong ip_version at line {line_number}: {prefix}")
-          if row.get("announced", True) is not True:
-              if config["assets"].get(row["asset"], {}).get("require_announced", True):
-                  raise SystemExit(f"non-announced prefix classified by announced-only asset: {prefix}")
-          if row.get("announced", True) and config["assets"].get(row["asset"], {}).get("exclude_announced", False):
-              raise SystemExit(f"announced prefix classified by unannounced-only asset: {prefix}")
-          if not row.get("origin_asn") and row.get("announced", True):
-              raise SystemExit(f"missing origin ASN: {prefix}")
-          if not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
-              if row.get("match_source") not in {"routing-origin-asn", "exclusive-immediate-upstream-asn"}:
-                  raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
-          upstreams = row.get("observed_immediate_upstream_asn")
-          if not isinstance(upstreams, list) or any(not isinstance(asn, int) or asn <= 0 for asn in upstreams):
-              raise SystemExit(f"invalid immediate upstream ASN evidence: {prefix}")
-          if upstreams != sorted(set(upstreams)):
-              raise SystemExit(f"unsorted or duplicate immediate upstream ASN evidence: {prefix}")
-          complete = row.get("immediate_upstream_evidence_complete")
-          if not isinstance(complete, bool):
-              raise SystemExit(f"missing immediate upstream evidence completeness: {prefix}")
-          final_upstreams = row.get("observed_final_upstream_asn")
-          if not isinstance(final_upstreams, list) or any(not isinstance(asn, int) or asn <= 0 for asn in final_upstreams):
-              raise SystemExit(f"invalid final upstream ASN evidence: {prefix}")
-          if final_upstreams != sorted(set(final_upstreams)):
-              raise SystemExit(f"unsorted or duplicate final upstream ASN evidence: {prefix}")
-          if not set(final_upstreams).issubset(china_final_upstreams):
-              raise SystemExit(f"final upstream outside configured China roots: {prefix}")
-          expected_china_membership = row.get("announced", True) and (
-              row["asset"] in china_assets or bool(final_upstreams)
-          )
-          if row.get("include_in_china") != expected_china_membership:
-              raise SystemExit(f"China aggregate provenance mismatch: {prefix}")
-          rule = config["assets"].get(row["asset"], {})
-          routing = rule.get("routing", {}) or {}
-          source = row.get("match_source")
-          if source == "routing-origin-asn":
-              direct = set(routing.get("direct_origin_asn", []))
-              observed_origins = set(asn_metadata.get(prefix, {}).get("observed_origin_asn", []))
-              if not direct.intersection(observed_origins):
-                  raise SystemExit(f"routing origin provenance mismatch: {prefix}")
-          elif source == "exclusive-immediate-upstream-asn":
-              expected = sorted(set(routing.get("exclusive_immediate_upstream_asn", [])))
-              if not complete or upstreams != expected:
-                  raise SystemExit(f"exclusive upstream provenance mismatch: {prefix}")
-          elif not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
+  for path, line_number, row in read_jsonl_files(asn_file):
+      prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
+      if prefix in asn_metadata:
+          raise SystemExit(f"duplicate ASN metadata prefix: {prefix}")
+      asn_metadata[prefix] = row
+  for path, line_number, row in read_jsonl_files(owner_file):
+      prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
+      if prefix in metadata:
+          raise SystemExit(f"duplicate metadata prefix: {prefix}")
+      if row["ip_version"] != ipaddress.ip_network(prefix).version:
+          raise SystemExit(f"wrong ip_version at line {line_number}: {prefix}")
+      if row.get("announced", True) is not True:
+          if config["assets"].get(row["asset"], {}).get("require_announced", True):
+              raise SystemExit(f"non-announced prefix classified by announced-only asset: {prefix}")
+      if row.get("announced", True) and config["assets"].get(row["asset"], {}).get("exclude_announced", False):
+          raise SystemExit(f"announced prefix classified by unannounced-only asset: {prefix}")
+      if not row.get("origin_asn") and row.get("announced", True):
+          raise SystemExit(f"missing origin ASN: {prefix}")
+      if not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
+          if row.get("match_source") not in {"routing-origin-asn", "exclusive-immediate-upstream-asn"}:
               raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
-          metadata[prefix] = row
-          if row.get("announced", True) is not True:
-              if config["assets"].get(row["asset"], {}).get("require_announced", True):
-                  raise SystemExit(f"non-announced prefix classified by announced-only asset: {prefix}")
+      upstreams = row.get("observed_immediate_upstream_asn")
+      if not isinstance(upstreams, list) or any(not isinstance(asn, int) or asn <= 0 for asn in upstreams):
+          raise SystemExit(f"invalid immediate upstream ASN evidence: {prefix}")
+      if upstreams != sorted(set(upstreams)):
+          raise SystemExit(f"unsorted or duplicate immediate upstream ASN evidence: {prefix}")
+      complete = row.get("immediate_upstream_evidence_complete")
+      if not isinstance(complete, bool):
+          raise SystemExit(f"missing immediate upstream evidence completeness: {prefix}")
+      final_upstreams = row.get("observed_final_upstream_asn")
+      if not isinstance(final_upstreams, list) or any(not isinstance(asn, int) or asn <= 0 for asn in final_upstreams):
+          raise SystemExit(f"invalid final upstream ASN evidence: {prefix}")
+      if final_upstreams != sorted(set(final_upstreams)):
+          raise SystemExit(f"unsorted or duplicate final upstream ASN evidence: {prefix}")
+      if not set(final_upstreams).issubset(china_final_upstreams):
+          raise SystemExit(f"final upstream outside configured China roots: {prefix}")
+      expected_china_membership = row.get("announced", True) and (
+          row["asset"] in china_assets or bool(final_upstreams)
+      )
+      if row.get("include_in_china") != expected_china_membership:
+          raise SystemExit(f"China aggregate provenance mismatch: {prefix}")
+      rule = config["assets"].get(row["asset"], {})
+      routing = rule.get("routing", {}) or {}
+      source = row.get("match_source")
+      if source == "routing-origin-asn":
+          direct = set(routing.get("direct_origin_asn", []))
+          observed_origins = set(asn_metadata.get(prefix, {}).get("observed_origin_asn", []))
+          if not direct.intersection(observed_origins):
+              raise SystemExit(f"routing origin provenance mismatch: {prefix}")
+      elif source == "exclusive-immediate-upstream-asn":
+          expected = sorted(set(routing.get("exclusive_immediate_upstream_asn", [])))
+          if not complete or upstreams != expected:
+              raise SystemExit(f"exclusive upstream provenance mismatch: {prefix}")
+      elif not row.get("whois_org") and not row.get("netname") and not row.get("org_id") and not row.get("maintainer"):
+          raise SystemExit(f"missing WHOIS owner evidence: {prefix}")
+      metadata[prefix] = row
+      if row.get("announced", True) is not True:
+          if config["assets"].get(row["asset"], {}).get("require_announced", True):
+              raise SystemExit(f"non-announced prefix classified by announced-only asset: {prefix}")
+      else:
+          announced.add(prefix)
+      if row.get("announced", True) and row.get("include_in_china", True):
+          if row["ip_version"] == 4:
+              china_v4.add(prefix)
           else:
-              announced.add(prefix)
-          if row.get("announced", True) and row.get("include_in_china", True):
-              if row["ip_version"] == 4:
-                  china_v4.add(prefix)
-              else:
-                  china_v6.add(prefix)
+              china_v6.add(prefix)
   if not metadata:
       raise SystemExit(f"{owner_file} is empty")
 
   path_metadata = {}
-  with (result / path_file).open(encoding="utf-8") as stream:
-      for line_number, line in enumerate(stream, 1):
-          row = json.loads(line)
-          prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
-          if prefix in path_metadata:
-              raise SystemExit(f"duplicate path metadata prefix: {prefix}")
-          if prefix not in metadata:
-              raise SystemExit(f"path metadata has unknown prefix: {prefix}")
-          upstreams = row.get("observed_immediate_upstream_asn")
-          if not isinstance(upstreams, list) or upstreams != sorted(set(upstreams)):
-              raise SystemExit(f"invalid path immediate upstream evidence: {prefix}")
-          if upstreams != metadata[prefix]["observed_immediate_upstream_asn"]:
-              raise SystemExit(f"owner/path upstream evidence mismatch: {prefix}")
-          if row.get("immediate_upstream_evidence_complete") != metadata[prefix]["immediate_upstream_evidence_complete"]:
-              raise SystemExit(f"owner/path evidence completeness mismatch: {prefix}")
-          if row.get("observed_final_upstream_asn") != metadata[prefix]["observed_final_upstream_asn"]:
-              raise SystemExit(f"owner/path final-upstream evidence mismatch: {prefix}")
-          path_metadata[prefix] = row
+  for path, line_number, row in read_jsonl_files(path_file):
+      prefix = str(ipaddress.ip_network(row["prefix"], strict=True))
+      if prefix in path_metadata:
+          raise SystemExit(f"duplicate path metadata prefix: {prefix}")
+      if prefix not in metadata:
+          raise SystemExit(f"path metadata has unknown prefix: {prefix}")
+      upstreams = row.get("observed_immediate_upstream_asn")
+      if not isinstance(upstreams, list) or upstreams != sorted(set(upstreams)):
+          raise SystemExit(f"invalid path immediate upstream evidence: {prefix}")
+      if upstreams != metadata[prefix]["observed_immediate_upstream_asn"]:
+          raise SystemExit(f"owner/path upstream evidence mismatch: {prefix}")
+      if row.get("immediate_upstream_evidence_complete") != metadata[prefix]["immediate_upstream_evidence_complete"]:
+          raise SystemExit(f"owner/path evidence completeness mismatch: {prefix}")
+      if row.get("observed_final_upstream_asn") != metadata[prefix]["observed_final_upstream_asn"]:
+          raise SystemExit(f"owner/path final-upstream evidence mismatch: {prefix}")
+      path_metadata[prefix] = row
   if set(path_metadata) != set(metadata):
       raise SystemExit(f"{path_file} does not cover exactly the owner metadata prefixes")
 
