@@ -381,8 +381,8 @@ upload: guard
   cd ip-lists
   find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
   cp -a "${staging}/." .
-  git config user.name "GitHub Actions"
-  git config user.email noreply@github.com
+  git config user.name "Suyunmeng"
+  git config user.email "Susus0175@proton.me"
   git add --all
   if git diff --cached --quiet; then
     echo "No generated changes"
