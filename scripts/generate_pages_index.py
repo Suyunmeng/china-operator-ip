@@ -26,6 +26,8 @@ LABELS = {
     "owocloudcn": "Shenzhen Moerin Technology Co., Ltd",
     "sparkvmcn": "Guangdong Tongri Network Technology Co., Ltd",
     "ytnetcn": "Hunan Yuntu Network Technology Co., Ltd",
+    "shixpcn": "National Shanghai New-Type Internet Exchange Point",
+    "cnixpcn": "Shenzhen Qianhai New-Type Internet Exchange Point",
 }
 
 
