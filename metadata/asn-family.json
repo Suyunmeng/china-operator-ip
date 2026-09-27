@@ -13025,6 +13025,17 @@
     ]
   },
   {
+    "asn": 135529,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 135530,
     "family": "cernet",
     "asset": "cernet",
