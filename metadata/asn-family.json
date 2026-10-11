@@ -16426,17 +16426,6 @@
     ]
   },
   {
-    "asn": 139734,
-    "family": "cernet",
-    "asset": "cernet",
-    "score": 70,
-    "depth": 2,
-    "evidence": [
-      "shared-maintainer",
-      "origin-side-bgp-adjacency"
-    ]
-  },
-  {
     "asn": 139739,
     "family": "cernet",
     "asset": "cernet",
@@ -21094,6 +21083,17 @@
   },
   {
     "asn": 151358,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
+    "asn": 151360,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
