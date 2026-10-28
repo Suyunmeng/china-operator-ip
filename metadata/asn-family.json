@@ -3338,8 +3338,8 @@
   },
   {
     "asn": 17976,
-    "family": "cernet",
-    "asset": "cernet",
+    "family": "chinanet",
+    "asset": "chinanet",
     "score": 70,
     "depth": 2,
     "evidence": [
@@ -7860,17 +7860,6 @@
     ]
   },
   {
-    "asn": 56262,
-    "family": "cernet",
-    "asset": "cernet",
-    "score": 70,
-    "depth": 2,
-    "evidence": [
-      "shared-maintainer",
-      "origin-side-bgp-adjacency"
-    ]
-  },
-  {
     "asn": 56286,
     "family": "cernet",
     "asset": "cernet",
@@ -11660,8 +11649,8 @@
   },
   {
     "asn": 134090,
-    "family": "cernet",
-    "asset": "cernet",
+    "family": "chinanet",
+    "asset": "chinanet",
     "score": 70,
     "depth": 2,
     "evidence": [
@@ -20148,6 +20137,18 @@
     ]
   },
   {
+    "asn": 142553,
+    "family": "chinanet",
+    "asset": "chinanet",
+    "score": 80,
+    "depth": 2,
+    "evidence": [
+      "domestic-asn-whois",
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 142568,
     "family": "chinanet",
     "asset": "chinanet",
@@ -22011,6 +22012,17 @@
     ]
   },
   {
+    "asn": 152666,
+    "family": "cernet",
+    "asset": "cernet",
+    "score": 70,
+    "depth": 2,
+    "evidence": [
+      "shared-maintainer",
+      "origin-side-bgp-adjacency"
+    ]
+  },
+  {
     "asn": 152669,
     "family": "chinanet",
     "asset": "chinanet",
@@ -22135,17 +22147,6 @@
     "asn": 152909,
     "family": "cernet",
     "asset": "cernet",
-    "score": 70,
-    "depth": 2,
-    "evidence": [
-      "shared-maintainer",
-      "origin-side-bgp-adjacency"
-    ]
-  },
-  {
-    "asn": 152911,
-    "family": "chinanet",
-    "asset": "chinanet",
     "score": 70,
     "depth": 2,
     "evidence": [
@@ -22706,17 +22707,6 @@
   },
   {
     "asn": 154213,
-    "family": "cernet",
-    "asset": "cernet",
-    "score": 70,
-    "depth": 2,
-    "evidence": [
-      "shared-maintainer",
-      "origin-side-bgp-adjacency"
-    ]
-  },
-  {
-    "asn": 154227,
     "family": "cernet",
     "asset": "cernet",
     "score": 70,
